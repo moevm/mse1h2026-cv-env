@@ -1,0 +1,227 @@
+/* AUGMENTATION VIEW */
+.augmentation {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 20px;
+  background-color: #f0f2f5;
+}
+
+/* IMAGE FRAME */
+.image-frame {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  background-color: white;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.image-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background-color: #f8f9fa;
+}
+
+.image-container h3 {
+  color: #2c3e50;
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+  padding-bottom: 12px;
+  border-bottom: 2px solid #ecf0f1;
+}
+
+.image-container input[type="file"] {
+  padding: 8px;
+  border: 2px dashed #bdc3c7;
+  border-radius: 6px;
+  background-color: white;
+  font-size: 13px;
+  color: #7f8c8d;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.image-container input[type="file"]:hover {
+  border-color: #3498db;
+  color: #3498db;
+}
+
+.image-container img {
+  max-width: 100%;
+  max-height: 250px;
+  object-fit: contain;
+}
+
+/* AUGMENTАTION CONTROL PANEL */
+.controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  background-color: white;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.left-controls,
+.right-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* CONTROL ITEMS FOR AUGMENTATION */
+.control-item {
+  display: grid;
+  grid-template-columns: 120px 1fr auto;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  background-color: #f8f9fa;
+  border-radius: 10px;
+  border: 1px solid #ecf0f1;
+  transition: all 0.2s;
+}
+
+.control-item:hover {
+  background-color: #ffffff;
+  border-color: #3498db;
+  box-shadow: 0 2px 8px rgba(52, 152, 219, 0.1);
+}
+
+.control-item label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #2c3e50;
+  white-space: nowrap;
+}
+
+.control-item input[type="range"] {
+  width: 100%;
+  height: 6px;
+  background: linear-gradient(to right, #3498db, #3498db);
+  background-size: 0% 100%;
+  background-repeat: no-repeat;
+  border-radius: 3px;
+  background-color: #e0e0e0;
+}
+
+.control-item input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  background-color: white;
+  border: 2px solid #3498db;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s;
+}
+
+.control-item input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+  background-color: #3498db;
+}
+
+/* Value display for ranges */
+.control-item input[type="range"] + span {
+  min-width: 45px;
+  font-size: 13px;
+  color: #3498db;
+  font-weight: 600;
+  text-align: right;
+  background-color: #e8f0fe;
+  padding: 4px 8px;
+  border-radius: 20px;
+}
+
+/* Checkboxes */
+.control-item input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  accent-color: #3498db;
+  border-radius: 4px;
+  margin: 0;
+  justify-self: end;
+}
+
+/* Action Buttons */
+.buttons {
+  display: flex;
+  gap: 16px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.apply-all-btn,
+.new-version-btn {
+  padding: 14px 28px;
+  border: none;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.apply-all-btn {
+  background-color: #3498db;
+  color: white;
+}
+
+.apply-all-btn:hover {
+  background-color: #2980b9;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
+}
+
+.new-version-btn {
+  background-color: #27ae60;
+  color: white;
+}
+
+.new-version-btn:hover {
+  background-color: #229954;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(39, 174, 96, 0.3);
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+  .controls {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+}
+
+@media (max-width: 768px) {
+  .image-frame {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .control-item {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .control-item input[type="range"] + span {
+    justify-self: start;
+  }
+
+  .buttons {
+    flex-direction: column;
+  }
+
+  .apply-all-btn,
+  .new-version-btn {
+    width: 100%;
+  }
+}
