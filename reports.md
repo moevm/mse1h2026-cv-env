@@ -325,8 +325,10 @@
 
 ## Итерация №1
 ### Презентация
+https://github.com/moevm/mse1h2026-cv-env/blob/report/docs/Iteration1_presentation.pdf
 
-### Скринкасты
+### Макет UI
+https://github.com/moevm/mse1h2026-cv-env/blob/report/docs/mockup.jpg
 
 ### Запланированные задачи
 1. Разработать прототип веб приложения
