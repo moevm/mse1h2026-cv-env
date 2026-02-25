@@ -1,0 +1,86 @@
+/*DATASET PAGE*/
+
+.dataset-view {
+  height: 100%;
+}
+
+.dataset-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding: 20px;
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.dataset-header h2 {
+  color: #2c3e50;
+  font-size: 24px;
+}
+
+.dataset-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.action-button {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.3s;
+}
+
+.action-button.primary {
+  background-color: #3498db;
+  color: white;
+}
+
+.action-button.primary:hover {
+  background-color: #2980b9;
+}
+
+.action-button:not(.primary) {
+  background-color: #ecf0f1;
+  color: #2c3e50;
+}
+
+.action-button:not(.primary):hover {
+  background-color: #bdc3c7;
+}
+
+.dataset-content {
+  display: flex;
+  flex-direction: column;
+  grid-template-columns: 300px 1fr;
+  gap: 20px;
+}
+
+.versions-section {
+  background-color: white;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.versions-section h3 {
+  color: #2c3e50;
+  margin-bottom: 15px;
+  font-size: 16px;
+}
+
+.split-section {
+  background-color: white;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.split-section h3 {
+  color: #2c3e50;
+  margin-bottom: 15px;
+  font-size: 16px;
+}
