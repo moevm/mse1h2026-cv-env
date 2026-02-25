@@ -1,0 +1,100 @@
+/* TRAINING VIEW*/
+.training-view {
+  height: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.training-view .form,
+.training-view .status {
+  flex: 1;
+  background-color: white;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.training-view .form h3,
+.training-view .status h3 {
+  color: #2c3e50;
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid #ecf0f1;
+}
+
+.training-view .form input,
+.training-view .form select {
+  width: 100%;
+  padding: 10px 12px;
+  margin-top: 5px;
+  margin-bottom: 15px;
+  border: 2px solid #e0e0e0;
+  border-radius: 6px;
+  font-size: 14px;
+  transition: border-color 0.3s;
+  background-color: white;
+}
+
+.training-view .form input:focus,
+.training-view .form select:focus {
+  outline: none;
+  border-color: #3498db;
+}
+
+.training-view .form input:disabled {
+  background-color: #f8f9fa;
+  cursor: not-allowed;
+}
+
+.training-view button {
+  width: 100%;
+  padding: 12px;
+  background-color: #28a745;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.training-view button:hover:not(:disabled) {
+  background-color: #218838;
+}
+
+.training-view button:disabled {
+  background-color: #95a5a6;
+  cursor: not-allowed;
+}
+
+.status-indicator {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 8px;
+}
+
+.status-indicator.active {
+  background-color: #27ae60;
+  animation: pulse 1.5s infinite;
+}
+
+.status-indicator.inactive {
+  background-color: #95a5a6;
+}
+
+/* Responsiveness*/
+@media (max-width: 1024px) {
+  .training-view {
+    flex-direction: column;
+  }
+
+  .image-frame {
+    flex-direction: column;
+  }
+}
