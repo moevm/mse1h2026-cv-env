@@ -12,13 +12,31 @@ function ImageViewer({
   hasPrev,
   annotationsManager,
 }) {
+  const [currentUrl, setCurrentUrl] = useState(null);
+  const urlsRef = useRef([]); // храним все созданные URL
+
+  useEffect(() => {
+    if (!image) return;
+
+    const file = image.file;
+    const newUrl = URL.createObjectURL(file);
+    urlsRef.current.push(newUrl);
+    setCurrentUrl(newUrl);
+  }, [image]);
+
+  // При размонтировании отзываем все созданные URL
+  useEffect(() => {
+    return () => {
+      urlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+      urlsRef.current = [];
+    };
+  }, []);
+
+  if (!image) return null;
+
   return (
     <div className="image-viewer-overlay">
       <div className="image-viewer">
-        <button className="close-button" onClick={onClose}>
-          {" "}
-        </button>
-
         <div className="viewer-navigation">
           {hasPrev && (
             <button className="nav-button prev" onClick={onPrev}>
@@ -31,9 +49,9 @@ function ImageViewer({
             </button>
           )}
         </div>
-
         <ImageAnnotator
-          image={image}
+          imageUrl={currentUrl}
+          imageName={image.name}
           onClose={onClose}
           annotationsManager={annotationsManager}
         />
