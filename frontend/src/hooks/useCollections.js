@@ -3,32 +3,17 @@ import { useState } from "react";
 function useCollections() {
   const [collections, setCollections] = useState([]);
 
-  const loadImagesFromFiles = (fileList) => {
-    const imageFiles = Array.from(fileList).filter((file) =>
+  const addCollection = (files, collectionName) => {
+    const imageFiles = Array.from(files).filter((file) =>
       file.type.startsWith("image/"),
     );
 
-    return Promise.all(
-      imageFiles.map((file) => {
-        return new Promise((resolve) => {
-          const reader = new FileReader();
-          reader.onload = (e) => {
-            resolve({
-              file,
-              url: e.target.result,
-              name: file.name,
-              type: file.type,
-              size: file.size,
-            });
-          };
-          reader.readAsDataURL(file);
-        });
-      }),
-    );
-  };
-
-  const addCollection = async (files, collectionName) => {
-    const images = await loadImagesFromFiles(files);
+    const images = imageFiles.map((file) => ({
+      file,
+      name: file.name,
+      type: file.type,
+      size: file.size,
+    }));
 
     const newCollection = {
       id: Date.now().toString(),
@@ -66,3 +51,4 @@ function useCollections() {
 }
 
 export default useCollections;
+
