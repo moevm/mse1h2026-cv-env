@@ -3,16 +3,25 @@ import { useState } from "react";
 function useCollections() {
   const [collections, setCollections] = useState([]);
 
-  const addCollection = (files, collectionName) => {
+    const addCollection = (files, collectionName) => {
     const imageFiles = Array.from(files).filter((file) =>
       file.type.startsWith("image/"),
     );
 
-    const images = imageFiles.map((file) => ({
+    // Сортировка по имени файла (с учётом локали для естественного порядка)
+    const sortedImageFiles = imageFiles.sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, {
+        numeric: true,
+        sensitivity: "base",
+      }),
+    );
+
+    const images = sortedImageFiles.map((file) => ({
       file,
       name: file.name,
       type: file.type,
       size: file.size,
+      relativePath: file.webkitRelativePath || file.name, // для уникальности
     }));
 
     const newCollection = {
