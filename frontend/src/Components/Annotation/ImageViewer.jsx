@@ -1,6 +1,5 @@
-import React from "react";
+import React, { useState, useEffect, useRef } from "react";
 import ImageAnnotator from "./ImageAnnotator";
-
 import "../../styles/AnnotationView.css";
 
 function ImageViewer({
