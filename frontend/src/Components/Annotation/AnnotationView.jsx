@@ -81,7 +81,6 @@ function AnnotationView({ collection, versions, currentVersionId }) {
 
       {showViewer && currentImage && (
         <ImageViewer
-          key={`${collection.id}-${currentImage.name}`}
           image={currentImage}
           onClose={handleCloseViewer}
           onNext={handleNextImage}
