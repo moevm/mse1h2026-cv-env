@@ -1,6 +1,6 @@
 import React from "react";
 
-const VersionList = ({ versions, currentVersionId, onSelectVersion }) => {
+function VersionList({ versions, currentVersionId, onSelectVersion }) {
   return (
     <div className="version-list">
       {versions.length === 0 ? (
@@ -13,6 +13,6 @@ const VersionList = ({ versions, currentVersionId, onSelectVersion }) => {
       )}
     </div>
   );
-};
+}
 
 export default VersionList;

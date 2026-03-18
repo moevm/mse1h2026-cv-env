@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import useObjectUrl from "../../hooks/useObjectUrl";
 import "../../styles/AugmentationView.css";
 
-const AugmentationView = ({ collection, versions, currentVersionId }) => {
+function AugmentationView({ collection, versions, currentVersionId }) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [originalImage, setOriginalImage] = useState(null);
   const [augmentedImage, setAugmentedImage] = useState(null);
@@ -114,7 +114,6 @@ const AugmentationView = ({ collection, versions, currentVersionId }) => {
       </div>
     </div>
   );
-};
+}
 
 export default AugmentationView;
-

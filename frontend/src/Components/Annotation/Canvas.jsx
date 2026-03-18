@@ -2,7 +2,7 @@ import React, { useRef, useEffect } from "react";
 import "../../styles/AnnotationView.css";
 import "../../styles/AugmentationView.css";
 
-const Canvas = ({
+function Canvas({
   imageUrl,
   annotations,
   classes,
@@ -20,10 +20,10 @@ const Canvas = ({
   onContextMenu,
   onMouseLeave,
   zoom,
-}) => {
+}) {
   const canvasRef = useRef(null);
   const imageRef = useRef(null);
-  const imageUrlRef = useRef(imageUrl); 
+  const imageUrlRef = useRef(imageUrl);
 
   useEffect(() => {
     imageUrlRef.current = imageUrl;
@@ -291,7 +291,6 @@ const Canvas = ({
       }}
     />
   );
-};
+}
 
 export default Canvas;
-

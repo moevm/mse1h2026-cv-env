@@ -5,12 +5,7 @@ import AnnotationPopup from "./AnnotationPopup";
 import { isPointInRect, isPointInPolygon } from "../../utils/canvasUtils";
 import "../../styles/AnnotationView.css";
 
-const ImageAnnotator = ({
-  imageUrl,
-  imageName,
-  onClose,
-  annotationsManager,
-}) => {
+function ImageAnnotator({ imageUrl, imageName, onClose, annotationsManager }) {
   const {
     annotations,
     classes,
@@ -304,7 +299,6 @@ const ImageAnnotator = ({
       )}
     </div>
   );
-};
+}
 
 export default ImageAnnotator;
-

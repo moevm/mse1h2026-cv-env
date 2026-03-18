@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import "../../styles/ImageAnnotator.css";
 
-const AnnotationPopup = ({ position, classes, onSave, onCancel }) => {
+function AnnotationPopup({ position, classes, onSave, onCancel }) {
   const [className, setClassName] = useState("");
   const [selectedClass, setSelectedClass] = useState("");
   const [showNewClassInput, setShowNewClassInput] = useState(false);
@@ -127,6 +127,6 @@ const AnnotationPopup = ({ position, classes, onSave, onCancel }) => {
       </div>
     </div>
   );
-};
+}
 
 export default AnnotationPopup;
