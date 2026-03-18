@@ -30,27 +30,27 @@ function AnnotationView({ collection, versions, currentVersionId }) {
     setCurrentImage(null);
   }
 
-  function handleNextImage() {
-    if (currentImage && images.length > 0) {
-      const currentIndex = images.findIndex(
-        (img) => img.name === currentImage.name,
-      );
-      if (currentIndex < images.length - 1) {
-        setCurrentImage(images[currentIndex + 1]);
-      }
-    }
-  }
+	function handleNextImage() {
+	  if (currentImage && images.length > 0) {
+		const currentIndex = images.findIndex(
+		  (img) => img.relativePath === currentImage.relativePath
+		);
+		if (currentIndex < images.length - 1) {
+		  setCurrentImage(images[currentIndex + 1]);
+		}
+	  }
+	}
 
-  function handlePrevImage() {
-    if (currentImage && images.length > 0) {
-      const currentIndex = images.findIndex(
-        (img) => img.name === currentImage.name,
-      );
-      if (currentIndex > 0) {
-        setCurrentImage(images[currentIndex - 1]);
-      }
-    }
-  }
+	function handlePrevImage() {
+	  if (currentImage && images.length > 0) {
+		const currentIndex = images.findIndex(
+		  (img) => img.relativePath === currentImage.relativePath
+		);
+		if (currentIndex > 0) {
+		  setCurrentImage(images[currentIndex - 1]);
+		}
+	  }
+	}
 
   if (!collection) {
     return (
@@ -61,8 +61,8 @@ function AnnotationView({ collection, versions, currentVersionId }) {
   }
 
   const currentIndex = currentImage
-    ? images.findIndex((img) => img.name === currentImage.name)
-    : -1;
+  ? images.findIndex((img) => img.relativePath === currentImage.relativePath)
+  : -1;
 
   return (
     <div className="annotation-view">
@@ -81,7 +81,6 @@ function AnnotationView({ collection, versions, currentVersionId }) {
 
       {showViewer && currentImage && (
         <ImageViewer
-          key={`${collection.id}-${currentImage.name}`}
           image={currentImage}
           onClose={handleCloseViewer}
           onNext={handleNextImage}

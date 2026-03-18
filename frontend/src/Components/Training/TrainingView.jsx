@@ -2,7 +2,7 @@ import React, { useState } from "react";
 
 import "../../styles/TrainingView.css";
 
-const TrainingView = () => {
+function TrainingView() {
   const [gpuStatus, setGpuStatus] = useState({
     name: "NVIDIA GTX 1080",
     load: 50,
@@ -87,6 +87,6 @@ const TrainingView = () => {
       </div>
     </div>
   );
-};
+}
 
 export default TrainingView;

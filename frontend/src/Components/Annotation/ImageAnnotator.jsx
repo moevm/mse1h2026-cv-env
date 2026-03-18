@@ -3,10 +3,9 @@ import Canvas from "./Canvas";
 import AnnotationToolbar from "./AnnotationToolbar";
 import AnnotationPopup from "./AnnotationPopup";
 import { isPointInRect, isPointInPolygon } from "../../utils/canvasUtils";
-
 import "../../styles/AnnotationView.css";
 
-const ImageAnnotator = ({ image, onClose, annotationsManager }) => {
+function ImageAnnotator({ imageUrl, imageName, onClose, annotationsManager }) {
   const {
     annotations,
     classes,
@@ -32,7 +31,7 @@ const ImageAnnotator = ({ image, onClose, annotationsManager }) => {
   const [zoom, setZoom] = useState(1);
 
   const currentImageAnnotations = annotations.filter(
-    (a) => a.imageId === image.name,
+    (a) => a.imageId === imageName,
   );
 
   const findAnnotationAtPoint = useCallback(
@@ -138,7 +137,7 @@ const ImageAnnotator = ({ image, onClose, annotationsManager }) => {
           setSelectedAnnotation({
             type: "rectangle",
             ...currentRect,
-            imageId: image.name,
+            imageId: imageName,
           });
           setShowPopup(true);
         }
@@ -147,7 +146,7 @@ const ImageAnnotator = ({ image, onClose, annotationsManager }) => {
       }
       setIsDragging(false);
     },
-    [isDrawing, currentTool, currentRect, image.name],
+    [isDrawing, currentTool, currentRect, imageName],
   );
 
   const handleClick = useCallback(
@@ -168,7 +167,7 @@ const ImageAnnotator = ({ image, onClose, annotationsManager }) => {
               setSelectedAnnotation({
                 type: "polygon",
                 points: newPolygon,
-                imageId: image.name,
+                imageId: imageName,
               });
               setShowPopup(true);
               setCurrentPolygon([]);
@@ -180,7 +179,7 @@ const ImageAnnotator = ({ image, onClose, annotationsManager }) => {
         setSelectedForEdit(annotation || null);
       }
     },
-    [currentTool, currentPolygon, findAnnotationAtPoint, image.name],
+    [currentTool, currentPolygon, findAnnotationAtPoint, imageName],
   );
 
   const handleDoubleClick = useCallback(
@@ -251,10 +250,12 @@ const ImageAnnotator = ({ image, onClose, annotationsManager }) => {
     setZoom((prev) => Math.max(prev - 0.1, 0.5)); // min 50%
   }, []);
 
+  const canvasImage = { url: imageUrl };
+
   return (
     <div className="image-annotator">
       <div className="annotator-header">
-        <h3>{image.name}</h3>
+        <h3>{imageName}</h3>
         <button className="close-button" onClick={onClose}>
           ×
         </button>
@@ -262,7 +263,7 @@ const ImageAnnotator = ({ image, onClose, annotationsManager }) => {
       <div className="annotator-main">
         <div className="canvas-container">
           <Canvas
-            image={image}
+            imageUrl={imageUrl}
             annotations={currentImageAnnotations}
             classes={classes}
             getClassColor={getClassColor}
@@ -298,6 +299,6 @@ const ImageAnnotator = ({ image, onClose, annotationsManager }) => {
       )}
     </div>
   );
-};
+}
 
 export default ImageAnnotator;

@@ -1,25 +1,31 @@
 .image-gallery {
+  height: 80vh;
   background-color: white;
   border-radius: 8px;
   padding: 20px;
+  margin-top: 10px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-.gallery-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 16px;
+.grid-cell {
+  padding: 8px;
+  box-sizing: border-box;
+  height: 100%;
 }
 
 .gallery-item {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
   cursor: pointer;
   border: 1px solid #e0e0e0;
   border-radius: 4px;
-  overflow: hidden;
-  transition:
-    transform 0.3s,
-    box-shadow 0.3s;
   background-color: white;
+  transition: transform 0.3s, box-shadow 0.3s;
+  display: flex;
+  flex-direction: column;
+  justify-content: center; 
+  position: relative; 
 }
 
 .gallery-item:hover {
@@ -27,21 +33,32 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
-.gallery-image {
-  width: 100%;
-  height: 140px;
-  object-fit: cover;
-  border-bottom: 1px solid #e0e0e0;
+.marked-badge {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  background-color: #4caf50;
+  color: white;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: bold;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
 }
 
 .image-info {
   padding: 10px;
+  text-align: center; 
 }
 
 .image-name {
   font-size: 13px;
   color: #2c3e50;
-  margin-bottom: 4px;
+  margin: 0 0 4px 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -50,6 +67,7 @@
 .image-size {
   font-size: 11px;
   color: #7f8c8d;
+  margin: 0;
 }
 
 /* IMAGE VIEWER */
@@ -186,3 +204,4 @@
 .nav-button.next {
   right: 8%;
 }
+

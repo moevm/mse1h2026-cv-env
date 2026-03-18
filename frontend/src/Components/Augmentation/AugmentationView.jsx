@@ -1,24 +1,41 @@
 import React, { useState, useEffect } from "react";
-
+import useObjectUrl from "../../hooks/useObjectUrl";
 import "../../styles/AugmentationView.css";
 
-const AugmentationView = ({ collection, versions, currentVersionId }) => {
+function AugmentationView({ collection, versions, currentVersionId }) {
+  const [currentIndex, setCurrentIndex] = useState(0);
   const [originalImage, setOriginalImage] = useState(null);
   const [augmentedImage, setAugmentedImage] = useState(null);
 
   const currentVersion = versions.find((v) => v.id === currentVersionId);
   const images = currentVersion?.images || collection?.images || [];
 
+  const originalUrl = useObjectUrl(originalImage?.file);
+  const augmentedUrl = useObjectUrl(augmentedImage?.file);
+
+  useEffect(() => {
+    setCurrentIndex(0);
+  }, [collection?.id, currentVersionId]);
+
   useEffect(() => {
     if (images.length > 0) {
-      setOriginalImage(images[0]);
+      const idx = Math.min(currentIndex, images.length - 1);
+      setOriginalImage(images[idx]);
       // TODO: apply augmentations here
-      setAugmentedImage(images[0]);
+      setAugmentedImage(images[idx]);
     } else {
       setOriginalImage(null);
       setAugmentedImage(null);
     }
-  }, [images, currentVersionId]);
+  }, [images, currentIndex]);
+
+  const handlePrev = () => {
+    setCurrentIndex((prev) => Math.max(prev - 1, 0));
+  };
+
+  const handleNext = () => {
+    setCurrentIndex((prev) => Math.min(prev + 1, images.length - 1));
+  };
 
   if (images.length === 0) {
     return (
@@ -36,14 +53,18 @@ const AugmentationView = ({ collection, versions, currentVersionId }) => {
       <div className="image-frame">
         <div className="image-container">
           <h3>Original Image</h3>
-          {originalImage && (
-            <img src={originalImage.url || originalImage} alt="Original" />
+          {originalUrl ? (
+            <img src={originalUrl} alt={originalImage?.name} />
+          ) : (
+            <div className="placeholder">Загрузка...</div>
           )}
         </div>
         <div className="image-container">
           <h3>Augmented Image</h3>
-          {augmentedImage && (
-            <img src={augmentedImage.url || augmentedImage} alt="Augmented" />
+          {augmentedUrl ? (
+            <img src={augmentedUrl} alt="Augmented" />
+          ) : (
+            <div className="placeholder">Загрузка...</div>
           )}
         </div>
       </div>
@@ -93,6 +114,6 @@ const AugmentationView = ({ collection, versions, currentVersionId }) => {
       </div>
     </div>
   );
-};
+}
 
 export default AugmentationView;

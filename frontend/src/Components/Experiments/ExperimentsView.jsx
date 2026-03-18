@@ -2,7 +2,7 @@ import React, { useState } from "react";
 
 import "../../styles/ExperimentsView.css";
 
-const ExperimentsView = () => {
+function ExperimentsView() {
   const [experiments, setExperiments] = useState([
     {
       name: "Exp 1",
@@ -65,6 +65,6 @@ const ExperimentsView = () => {
       </div>
     </div>
   );
-};
+}
 
 export default ExperimentsView;

@@ -1,12 +1,12 @@
 import "../../styles/ImageAnnotator.css";
 
-const AnnotationToolbar = ({
+function AnnotationToolbar({
   currentTool,
   onToolSelect,
   onZooomIncr,
   onZoomDecr,
   onApprove,
-}) => {
+}) {
   return (
     <div className="annotation-toolbar">
       <div className="toolbar-buttons">
@@ -71,6 +71,6 @@ const AnnotationToolbar = ({
       </div>
     </div>
   );
-};
+}
 
 export default AnnotationToolbar;

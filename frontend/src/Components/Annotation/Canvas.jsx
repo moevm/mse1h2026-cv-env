@@ -1,10 +1,9 @@
 import React, { useRef, useEffect } from "react";
-
 import "../../styles/AnnotationView.css";
 import "../../styles/AugmentationView.css";
 
-const Canvas = ({
-  image,
+function Canvas({
+  imageUrl,
   annotations,
   classes,
   getClassColor,
@@ -21,20 +20,48 @@ const Canvas = ({
   onContextMenu,
   onMouseLeave,
   zoom,
-}) => {
+}) {
   const canvasRef = useRef(null);
-  const imageRef = useRef(null); // store loaded image to avoid reloading on zoom
+  const imageRef = useRef(null);
+  const imageUrlRef = useRef(imageUrl);
 
   useEffect(() => {
-    const img = new Image();
-    img.src = image.url;
-    img.onload = () => {
-      imageRef.current = img;
-      updateCanvasDimensions();
-    };
-  }, [image.url]);
+    imageUrlRef.current = imageUrl;
+  }, [imageUrl]);
 
-  // update canvas dimensions and redraw when zoom changes
+  useEffect(() => {
+    if (!imageUrl) return;
+
+    const img = new Image();
+    let isCurrent = true;
+
+    img.onload = () => {
+      if (isCurrent && imageUrlRef.current === imageUrl) {
+        imageRef.current = img;
+        updateCanvasDimensions();
+      }
+    };
+
+    img.onerror = () => {
+      if (isCurrent) {
+        console.warn("Failed to load image (maybe revoked):", imageUrl);
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const ctx = canvas.getContext("2d");
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+      }
+    };
+
+    img.src = imageUrl;
+
+    return () => {
+      isCurrent = false;
+      img.onload = null;
+      img.onerror = null;
+    };
+  }, [imageUrl]);
+
   useEffect(() => {
     updateCanvasDimensions();
   }, [zoom]);
@@ -201,8 +228,10 @@ const Canvas = ({
   const getCanvasCoordinates = (e) => {
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
-    const canvasX = (e.clientX - rect.left) * (canvas.width / rect.width);
-    const canvasY = (e.clientY - rect.top) * (canvas.height / rect.height);
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const canvasX = (e.clientX - rect.left) * scaleX;
+    const canvasY = (e.clientY - rect.top) * scaleY;
     return {
       x: canvasX / zoom,
       y: canvasY / zoom,
@@ -262,6 +291,6 @@ const Canvas = ({
       }}
     />
   );
-};
+}
 
 export default Canvas;

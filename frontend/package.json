@@ -11,7 +11,10 @@
   },
   "dependencies": {
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "react-virtualized": "^9.22.6",
+    "react-virtualized-auto-sizer": "^2.0.3",
+    "react-window": "^2.2.7"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
