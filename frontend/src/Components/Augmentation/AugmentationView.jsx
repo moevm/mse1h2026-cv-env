@@ -57,13 +57,46 @@ function AugmentationView({ collection, versions, currentVersionId }) {
     }));
   };
 
+const getAugmentationStyle = (params) => {
+  // 1. Обработка отражений (вероятностная логика для превью)
+  // В превью мы показываем эффект, если вероятность > 0.5
+  const scaleX = params.fliplr > 0.5 ? -1 : 1;
+  const scaleY = params.flipud > 0.5 ? -1 : 1;
+
+  // 2. Расчет перспективы (очень упрощенно для CSS)
+  const perspectiveEffect = params.perspective > 0 
+    ? `perspective(500px) rotateX(${params.perspective * 10000}deg)` 
+    : '';
+
+  return {
+    // Цветовые коррекции
+    filter: `hue-rotate(${params.hsv_h * 360}deg) saturate(${params.hsv_s * 100}%) brightness(${params.hsv_v * 100}%)`,
+    
+    // Геометрия
+    transform: `
+      ${perspectiveEffect}
+      rotate(${params.degrees}deg) 
+      scale(${params.scale * scaleX}, ${params.scale * scaleY}) 
+      translate(${params.translate * 50}px, ${params.translate * 50}px) 
+      skew(${params.shear}deg, ${params.shear}deg)
+    `,
+    
+    transformOrigin: 'center',
+    transition: 'transform 0.2s ease-out, filter 0.2s ease-out', // добавим плавности для "вау-эффекта"
+    display: 'block',
+    maxWidth: '100%',
+    height: 'auto'
+    
+  };
+};
+
   const handleApply = async () => {
     try {
       await saveAugmentations(params);
-      alert("Сохранено в YAML ✅");
+      alert("Сохранено в YAML ");
     } catch (e) {
       console.error(e);
-      alert("Ошибка ❌");
+      alert("Ошибка");
     }
   };
 
@@ -100,7 +133,7 @@ function AugmentationView({ collection, versions, currentVersionId }) {
         <div className="image-container">
           <h3>Augmented Image</h3>
           {augmentedUrl ? (
-            <img src={augmentedUrl} alt="Augmented" />
+            <img src={augmentedUrl} alt="Augmented" style={getAugmentationStyle(params)} />
           ) : (
             <div className="placeholder">Загрузка...</div>
           )}
@@ -185,18 +218,20 @@ function AugmentationView({ collection, versions, currentVersionId }) {
 
           <div className="control-item">
             <label>Flip Vertical</label>
-            <input type="checkbox"
-              checked={params.flipud === 1}
-              onChange={(e) => handleChange("flipud", e.target.checked ? 1 : 0)}
+            <input type="range" min="0" max="1" step="0.1"
+              value={params.flipud}
+              onChange={(e) => handleChange("flipud", e.target.value)}
             />
+            <span>{params.flipud.toFixed(1)}</span>
           </div>
 
           <div className="control-item">
             <label>Flip Horizontal</label>
-            <input type="checkbox"
-              checked={params.fliplr === 1}
-              onChange={(e) => handleChange("fliplr", e.target.checked ? 1 : 0)}
+            <input type="range" min="0" max="1" step="0.1"
+              value={params.fliplr}
+              onChange={(e) => handleChange("fliplr", e.target.value)}
             />
+            <span>{params.fliplr.toFixed(1)}</span>
           </div>
 
           <div className="control-item">
