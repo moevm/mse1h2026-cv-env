@@ -57,6 +57,30 @@ function AugmentationView({ collection, versions, currentVersionId }) {
     }));
   };
 
+  // Параметры с ограничениями из pydantic AugmentationSchema
+  const paramConfig = {
+    hsv_h: { min: 0, max: 1, step: 0.001, decimals: 3 },
+    hsv_s: { min: 0, max: 1, step: 0.01, decimals: 2 },
+    hsv_v: { min: 0, max: 1, step: 0.01, decimals: 2 },
+    degrees: { min: -180, max: 180, step: 1, decimals: 0 },
+    translate: { min: 0, max: 1, step: 0.01, decimals: 2 },
+    scale: { min: 0, max: 1, step: 0.01, decimals: 2 },
+    shear: { min: -180, max: 180, step: 1, decimals: 0 },
+    perspective: { min: 0, max: 0.001, step: 0.0001, decimals: 4 },
+    flipud: { min: 0, max: 1, step: 0.1, decimals: 1 },
+    fliplr: { min: 0, max: 1, step: 0.1, decimals: 1 },
+    mosaic: { min: 0, max: 1, step: 0.1, decimals: 1 },
+    mixup: { min: 0, max: 1, step: 0.1, decimals: 1 },
+  };
+
+  const handleNumberInputChange = (key, value) => {
+    const config = paramConfig[key];
+    const numValue = Number(value);
+    // Валидация по минимум и максимум
+    const validValue = Math.max(config.min, Math.min(config.max, numValue));
+    handleChange(key, validValue);
+  };
+
 const getAugmentationStyle = (params) => {
 
   // Расчет перспективы
@@ -144,7 +168,10 @@ const getAugmentationStyle = (params) => {
               value={params.hsv_h}
               onChange={(e) => handleChange("hsv_h", e.target.value)}
             />
-            <span>{params.hsv_h.toFixed(3)}</span>
+            <input type="number" min="0" max="1" step="0.001"
+              value={params.hsv_h}
+              onChange={(e) => handleNumberInputChange("hsv_h", e.target.value)}
+            />
           </div>
 
           <div className="control-item">
@@ -153,7 +180,10 @@ const getAugmentationStyle = (params) => {
               value={params.hsv_s}
               onChange={(e) => handleChange("hsv_s", e.target.value)}
             />
-            <span>{params.hsv_s.toFixed(2)}</span>
+            <input type="number" min="0" max="1" step="0.01"
+              value={params.hsv_s}
+              onChange={(e) => handleNumberInputChange("hsv_s", e.target.value)}
+            />
           </div>
 
           <div className="control-item">
@@ -162,7 +192,10 @@ const getAugmentationStyle = (params) => {
               value={params.hsv_v}
               onChange={(e) => handleChange("hsv_v", e.target.value)}
             />
-            <span>{params.hsv_v.toFixed(2)}</span>
+            <input type="number" min="0" max="1" step="0.01"
+              value={params.hsv_v}
+              onChange={(e) => handleNumberInputChange("hsv_v", e.target.value)}
+            />
           </div>
 
           <div className="control-item">
@@ -171,7 +204,10 @@ const getAugmentationStyle = (params) => {
               value={params.degrees}
               onChange={(e) => handleChange("degrees", e.target.value)}
             />
-            <span>{params.degrees.toFixed(0)}</span>
+            <input type="number" min="-180" max="180" step="1"
+              value={params.degrees}
+              onChange={(e) => handleNumberInputChange("degrees", e.target.value)}
+            />
           </div>
 
           <div className="control-item">
@@ -180,7 +216,10 @@ const getAugmentationStyle = (params) => {
               value={params.translate}
               onChange={(e) => handleChange("translate", e.target.value)}
             />
-            <span>{params.translate.toFixed(2)}</span>
+            <input type="number" min="0" max="1" step="0.01"
+              value={params.translate}
+              onChange={(e) => handleNumberInputChange("translate", e.target.value)}
+            />
           </div>
 
           <div className="control-item">
@@ -189,7 +228,10 @@ const getAugmentationStyle = (params) => {
               value={params.scale}
               onChange={(e) => handleChange("scale", e.target.value)}
             />
-            <span>{params.scale.toFixed(2)}</span>
+            <input type="number" min="0" max="1" step="0.01"
+              value={params.scale}
+              onChange={(e) => handleNumberInputChange("scale", e.target.value)}
+            />
           </div>
         </div>
 
@@ -200,7 +242,10 @@ const getAugmentationStyle = (params) => {
               value={params.shear}
               onChange={(e) => handleChange("shear", e.target.value)}
             />
-            <span>{params.shear.toFixed(0)}</span>
+            <input type="number" min="-180" max="180" step="1"
+              value={params.shear}
+              onChange={(e) => handleNumberInputChange("shear", e.target.value)}
+            />
           </div>
 
           <div className="control-item">
@@ -209,7 +254,10 @@ const getAugmentationStyle = (params) => {
               value={params.perspective}
               onChange={(e) => handleChange("perspective", e.target.value)}
             />
-            <span>{params.perspective.toFixed(4)}</span>
+            <input type="number" min="0" max="0.001" step="0.0001"
+              value={params.perspective}
+              onChange={(e) => handleNumberInputChange("perspective", e.target.value)}
+            />
           </div>
 
           <div className="control-item">
@@ -218,7 +266,10 @@ const getAugmentationStyle = (params) => {
               value={params.flipud}
               onChange={(e) => handleChange("flipud", e.target.value)}
             />
-            <span>{params.flipud.toFixed(1)}</span>
+            <input type="number" min="0" max="1" step="0.1"
+              value={params.flipud}
+              onChange={(e) => handleNumberInputChange("flipud", e.target.value)}
+            />
           </div>
 
           <div className="control-item">
@@ -227,7 +278,10 @@ const getAugmentationStyle = (params) => {
               value={params.fliplr}
               onChange={(e) => handleChange("fliplr", e.target.value)}
             />
-            <span>{params.fliplr.toFixed(1)}</span>
+            <input type="number" min="0" max="1" step="0.1"
+              value={params.fliplr}
+              onChange={(e) => handleNumberInputChange("fliplr", e.target.value)}
+            />
           </div>
 
           <div className="control-item">
@@ -236,7 +290,10 @@ const getAugmentationStyle = (params) => {
               value={params.mosaic}
               onChange={(e) => handleChange("mosaic", e.target.value)}
             />
-            <span>{params.mosaic.toFixed(1)}</span>
+            <input type="number" min="0" max="1" step="0.1"
+              value={params.mosaic}
+              onChange={(e) => handleNumberInputChange("mosaic", e.target.value)}
+            />
           </div>
 
           <div className="control-item">
@@ -245,7 +302,10 @@ const getAugmentationStyle = (params) => {
               value={params.mixup}
               onChange={(e) => handleChange("mixup", e.target.value)}
             />
-            <span>{params.mixup.toFixed(1)}</span>
+            <input type="number" min="0" max="1" step="0.1"
+              value={params.mixup}
+              onChange={(e) => handleNumberInputChange("mixup", e.target.value)}
+            />
           </div>
         </div>
       </div>

@@ -130,16 +130,32 @@
   background-color: #3498db;
 }
 
-/* Value display for ranges */
-.control-item input[type="range"] + span {
-  min-width: 45px;
-  font-size: 13px;
-  color: #3498db;
-  font-weight: 600;
-  text-align: right;
-  background-color: #e8f0fe;
+/* Numeric input field for parameter values */
+.control-item input[type="number"] {
+  min-width: 60px;
+  width: 70px;
   padding: 4px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #3498db;
+  background-color: #e8f0fe;
+  border: 1px solid #3498db;
   border-radius: 20px;
+  text-align: right;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.control-item input[type="number"]:hover {
+  background-color: #d0e8ff;
+  border-color: #2980b9;
+}
+
+.control-item input[type="number"]:focus {
+  outline: none;
+  background-color: #ffffff;
+  border-color: #3498db;
+  box-shadow: 0 0 5px rgba(52, 152, 219, 0.3);
 }
 
 /* Checkboxes */
