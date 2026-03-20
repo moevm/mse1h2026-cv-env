@@ -58,12 +58,8 @@ function AugmentationView({ collection, versions, currentVersionId }) {
   };
 
 const getAugmentationStyle = (params) => {
-  // 1. Обработка отражений (вероятностная логика для превью)
-  // В превью мы показываем эффект, если вероятность > 0.5
-  const scaleX = params.fliplr > 0.5 ? -1 : 1;
-  const scaleY = params.flipud > 0.5 ? -1 : 1;
 
-  // 2. Расчет перспективы (очень упрощенно для CSS)
+  // Расчет перспективы
   const perspectiveEffect = params.perspective > 0 
     ? `perspective(500px) rotateX(${params.perspective * 10000}deg)` 
     : '';
@@ -76,13 +72,13 @@ const getAugmentationStyle = (params) => {
     transform: `
       ${perspectiveEffect}
       rotate(${params.degrees}deg) 
-      scale(${params.scale * scaleX}, ${params.scale * scaleY}) 
+      scale(${params.scale}, ${params.scale }) 
       translate(${params.translate * 50}px, ${params.translate * 50}px) 
       skew(${params.shear}deg, ${params.shear}deg)
     `,
     
     transformOrigin: 'center',
-    transition: 'transform 0.2s ease-out, filter 0.2s ease-out', // добавим плавности для "вау-эффекта"
+    transition: 'transform 0.2s ease-out, filter 0.2s ease-out', 
     display: 'block',
     maxWidth: '100%',
     height: 'auto'
