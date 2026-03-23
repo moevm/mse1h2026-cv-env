@@ -7,6 +7,7 @@ function AugmentationView({ collection, versions, currentVersionId }) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [originalImage, setOriginalImage] = useState(null);
   const [augmentedImage, setAugmentedImage] = useState(null);
+  const [tooltip, setTooltip] = useState({ visible: false, text: '', x: 0, y: 0 });
 
   const [params, setParams] = useState({
     hsv_h: 0.015,
@@ -267,7 +268,7 @@ const getAugmentationStyle = (params) => {
           </div>
 
           <div className="control-item">
-            <label>Flip Vertical</label>
+            <label>Flip Vertical <span onMouseEnter={(e) => setTooltip({ visible: true, text: 'Вероятноть того, что изображение будет отзеркалено сверху вниз', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false, text: '', x: 0, y: 0 })}>?</span></label>
             <input type="range" min="0" max="1" step="0.1"
               value={params.flipud}
               onChange={(e) => handleChange("flipud", e.target.value)}
@@ -279,7 +280,7 @@ const getAugmentationStyle = (params) => {
           </div>
 
           <div className="control-item">
-            <label>Flip Horizontal</label>
+            <label>Flip Horizontal <span onMouseEnter={(e) => setTooltip({ visible: true, text: 'Вероятноть того, что изображение будет отзеркалено слева направо', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false, text: '', x: 0, y: 0 })}>?</span></label>
             <input type="range" min="0" max="1" step="0.1"
               value={params.fliplr}
               onChange={(e) => handleChange("fliplr", e.target.value)}
@@ -291,7 +292,7 @@ const getAugmentationStyle = (params) => {
           </div>
 
           <div className="control-item">
-            <label>Mosaic</label>
+            <label>Mosaic <span onMouseEnter={(e) => setTooltip({ visible: true, text: 'Вероятност, что какое-либо изображение будет объединено 3 другими в одно изображение', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false, text: '', x: 0, y: 0 })}>?</span></label>
             <input type="range" min="0" max="1" step="0.1"
               value={params.mosaic}
               onChange={(e) => handleChange("mosaic", e.target.value)}
@@ -303,7 +304,7 @@ const getAugmentationStyle = (params) => {
           </div>
 
           <div className="control-item">
-            <label>Mixup</label>
+            <label>Mixup <span onMouseEnter={(e) => setTooltip({ visible: true, text: 'Смешивает два изображения и их метки с заданной вероятностью.', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false, text: '', x: 0, y: 0 })}>?</span></label>
             <input type="range" min="0" max="1" step="0.1"
               value={params.mixup}
               onChange={(e) => handleChange("mixup", e.target.value)}
@@ -322,6 +323,11 @@ const getAugmentationStyle = (params) => {
         </button>
         <button className="new-version-btn">Create New Version</button>
       </div>
+      {tooltip.visible && (
+        <div className="tooltip" style={{ left: tooltip.x + 10, top: tooltip.y + 10 }}>
+          {tooltip.text}
+        </div>
+      )}
     </div>
   );
 }
