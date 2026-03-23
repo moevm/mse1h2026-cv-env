@@ -8,7 +8,7 @@ export const getAugmentations = async () => {
 
 export const saveAugmentations = async (data) => {
   const res = await fetch("http://localhost:8000/api/augmentation/config", {
-    method: "POST",
+    method: "PUT",
     headers: {
       "Content-Type": "application/json",
     },
