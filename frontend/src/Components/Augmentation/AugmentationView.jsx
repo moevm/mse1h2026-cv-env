@@ -44,7 +44,7 @@ function AugmentationView({ collection, versions, currentVersionId }) {
     if (images.length > 0) {
       const idx = Math.min(currentIndex, images.length - 1);
       setOriginalImage(images[idx]);
-      setAugmentedImage(images[idx]); // без реальной аугментации, только первью
+      setAugmentedImage(images[idx]); // только превью, а не реальное аугментированное изображение
     } else {
       setOriginalImage(null);
       setAugmentedImage(null);
@@ -60,7 +60,7 @@ function AugmentationView({ collection, versions, currentVersionId }) {
     }));
   };
 
-  // Параметры с ограничениями из  AugmentationSchema
+  // Параметры с ограничениями из AugmentationSchema
   const paramConfig = {
     hsv_h: { min: 0, max: 1, step: 0.001, decimals: 3 },
     hsv_s: { min: 0, max: 1, step: 0.01, decimals: 2 },
