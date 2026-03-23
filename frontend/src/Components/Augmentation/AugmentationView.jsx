@@ -91,14 +91,17 @@ const getAugmentationStyle = (params) => {
 
   const zoom = Math.max(0.2, Math.min(2, params.scale));
   const translate = params.translate * 30;
-  const scaleX = params.fliplr > 0.5 ? -1 : 1;
-  const scaleY = params.flipud > 0.5 ? -1 : 1;
+  // Если нужно вернуть флип:
+  // const scaleX = params.fliplr > 0.5 ? -1 : 1;
+  // const scaleY = params.flipud > 0.5 ? -1 : 1;
+  // + scale(${zoom*scaleX}, ${zoom*scaleY}) в transform
+
 
   return {
     filter: `hue-rotate(${params.hsv_h*360}deg) saturate(${params.hsv_s*100}%) brightness(${params.hsv_v*100}%)`,
     transform: `
       rotate(${params.degrees}deg)
-      scale(${zoom*scaleX}, ${zoom*scaleY})
+      scale(${zoom})
       translate(${translate}px, ${translate}px)
       skew(${shearAngle}deg)
       perspective(${persp}px)
