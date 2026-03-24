@@ -31,7 +31,6 @@ function TrainingView() {
   const [modelError, setModelError] = useState("");
 
   useEffect(() => {
-    // Загружаем сохраненный конфиг при монтировании
     getTrainingConfig()
       .then((config) => {
         setParams((prev) => ({ ...prev, ...config }));
@@ -92,7 +91,6 @@ function TrainingView() {
   };
 
   const handleStartTraining = async () => {
-    // Сначала валидируем модель
     const isValid = await validateModelAPI(params.model);
     
     if (!isValid) {
@@ -102,10 +100,8 @@ function TrainingView() {
 
     try {
       setIsLoading(true);
-      // Сохраняем конфиг перед запуском
       await saveTrainingConfig(params);
       
-      // Запускаем обучение
       const response = await startTraining(params);
       
       setTaskQueue([...taskQueue, `Обучение запущено с моделью: ${params.model}`]);
@@ -121,13 +117,10 @@ function TrainingView() {
 
   return (
     <div className="training-view">
-      {/* Верхняя секция с параметрами (2 колонки) */}
       <div className="params-section">
-        {/* Левая колонка */}
         <div className="params-left">
           <h3>Model & Basic Settings</h3>
           
-          {/* Модель (особый стиль) */}
           <div className="model-group">
             <label>Model:</label>
             <div style={{ flex: 1 }}>
@@ -152,7 +145,6 @@ function TrainingView() {
             </div>
           )}
           
-          {/* Основные параметры */}
           <div className="param-group">
             <label>epochs:</label>
             <input
@@ -213,7 +205,6 @@ function TrainingView() {
           </div>
         </div>
         
-        {/* Правая колонка */}
         <div className="params-right">
           <h3>Optimization & Advanced</h3>
           
@@ -333,7 +324,6 @@ function TrainingView() {
         </div>
       </div>
         
-      {/* Нижняя секция с очередью и кнопками */}
       <div className="status">
         <h3>Task Queue:</h3>
         <ul className="task-list">
