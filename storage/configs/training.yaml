@@ -7,7 +7,7 @@ training:
   lr0: 0.01
   lrf: 0.01
   model: yolov8n
-  modelName: null
+  modelName: ''
   momentum: 0.937
   optimizer: SGD
   patience: 50
