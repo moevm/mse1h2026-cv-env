@@ -14,12 +14,10 @@ import useCollections from "../hooks/useCollections";
 import "../styles/App.css";
 
 function App() {
-  const { collections, addCollection, getCollection, removeCollection } =
+  const { collections, addCollection, getCollection, removeCollection, syncCollection } =
     useCollections();
   const [currentCollectionId, setCurrentCollectionId] = useState(null);
-
   const [currentTab, setCurrentTab] = useState("dataset");
-
   const [showUploader, setShowUploader] = useState(false);
 
   const versions = [];
@@ -35,18 +33,16 @@ function App() {
   }
 
   function handleAddCollection() {
-    console.log(collections);
     setShowUploader(true);
   }
 
   function handleDeleteCollection() {}
 
   // functions for file uploader
-  function handleFolderUpload(files, collectionName) {
-    const collectionId = addCollection(files, collectionName);
+  async function handleFolderUpload(files, collectionName, directoryHandle) {
+    const collectionId = addCollection(files, collectionName, directoryHandle);
     setCurrentCollectionId(collectionId);
     setShowUploader(false);
-    console.log(collections);
   }
 
   function handleCancelUpload() {
@@ -60,8 +56,17 @@ function App() {
 
   function handleUpdateSplit() {}
 
-  // rendering main content
+  // sync function
+  async function handleSyncCollection(collectionId) {
+    try {
+      await syncCollection(collectionId);
+    } catch (err) {
+      console.error("Sync failed:", err);
+      // optionally show error message to user
+    }
+  }
 
+  // rendering main content
   function renderTabContent() {
     if (!currentCollection) {
       return (
@@ -89,6 +94,7 @@ function App() {
             onCreateVersion={handleCreateVersion}
             onSelectVersion={handleSelectVersion}
             onUpdateSplit={handleUpdateSplit}
+            onSync={handleSyncCollection}
           />
         );
       case "annotation": // pass same props to all components
