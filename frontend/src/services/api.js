@@ -1,5 +1,3 @@
-const API_BASE_URL = "http://localhost:8000";
-
 // Augmentation
 export const getAugmentations = async () => {
   const res = await fetch(`${API_BASE_URL}/api/augmentation/config`);
@@ -10,8 +8,8 @@ export const getAugmentations = async () => {
 };
 
 export const saveAugmentations = async (data) => {
-  const res = await fetch(`${API_BASE_URL}/api/augmentation/config`, {
-    method: "POST",
+  const res = await fetch("http://localhost:8000/api/augmentation/config", {
+    method: "PUT",
     headers: {
       "Content-Type": "application/json",
     },
@@ -27,7 +25,7 @@ export const saveAugmentations = async (data) => {
 
 // Training
 export const getTrainingConfig = async () => {
-  const res = await fetch(`${API_BASE_URL}/api/training/config`);
+  const res = await fetch(`http://localhost:8000/api/training/config`);
   if (!res.ok) {
     throw new Error("Ошибка загрузки конфигурации обучения");
   }

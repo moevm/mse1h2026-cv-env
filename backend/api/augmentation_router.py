@@ -11,7 +11,7 @@ async def get_config():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/config")
+@router.put("/config")
 async def update_config(data: AugmentationSchema):
     try:
         save_augmentation_config(data)

@@ -43,7 +43,7 @@ function AugmentationView({ collection, versions, currentVersionId }) {
     if (images.length > 0) {
       const idx = Math.min(currentIndex, images.length - 1);
       setOriginalImage(images[idx]);
-      setAugmentedImage(images[idx]); // пока без реальной аугментации
+      setAugmentedImage(images[idx]); // без реальной аугментации, только первью
     } else {
       setOriginalImage(null);
       setAugmentedImage(null);
@@ -51,13 +51,15 @@ function AugmentationView({ collection, versions, currentVersionId }) {
   }, [images, currentIndex]);
 
   const handleChange = (key, value) => {
+    const data = Number(value);
+
     setParams((prev) => ({
       ...prev,
-      [key]: Number(value),
+      [key]: data,
     }));
   };
 
-  // Параметры с ограничениями из pydantic AugmentationSchema
+  // Параметры с ограничениями из  AugmentationSchema
   const paramConfig = {
     hsv_h: { min: 0, max: 1, step: 0.001, decimals: 3 },
     hsv_s: { min: 0, max: 1, step: 0.01, decimals: 2 },
@@ -82,34 +84,38 @@ function AugmentationView({ collection, versions, currentVersionId }) {
   };
 
 const getAugmentationStyle = (params) => {
+  const persp = params.perspective > 0 ? Math.max(220, 1200 - params.perspective * 1000000) : 1200;
+  const rotX = params.perspective * -40000; 
+  const rotY = params.perspective * 24000; 
+  const shearAngle = params.shear;
 
-  // Расчет перспективы
-  const perspectiveEffect = params.perspective > 0 
-    ? `perspective(500px) rotateX(${params.perspective * 10000}deg)` 
-    : '';
+  const zoom = Math.max(0.2, Math.min(2, params.scale));
+  const translate = params.translate * 30;
+  // Если нужно вернуть флип:
+  // const scaleX = params.fliplr > 0.5 ? -1 : 1;
+  // const scaleY = params.flipud > 0.5 ? -1 : 1;
+  // + scale(${zoom*scaleX}, ${zoom*scaleY}) в transform
+
 
   return {
-    // Цветовые коррекции
-    filter: `hue-rotate(${params.hsv_h * 360}deg) saturate(${params.hsv_s * 100}%) brightness(${params.hsv_v * 100}%)`,
-    
-    // Геометрия
+    filter: `hue-rotate(${params.hsv_h*360}deg) saturate(${params.hsv_s*100}%) brightness(${params.hsv_v*100}%)`,
     transform: `
-      ${perspectiveEffect}
-      rotate(${params.degrees}deg) 
-      scale(${params.scale}, ${params.scale }) 
-      translate(${params.translate * 50}px, ${params.translate * 50}px) 
-      skew(${params.shear}deg, ${params.shear}deg)
+      rotate(${params.degrees}deg)
+      scale(${zoom})
+      translate(${translate}px, ${translate}px)
+      skew(${shearAngle}deg)
+      perspective(${persp}px)
+      rotateX(${rotX}deg)
+      rotateY(${rotY}deg)
     `,
-    
     transformOrigin: 'center',
-    transition: 'transform 0.2s ease-out, filter 0.2s ease-out', 
-    display: 'block',
+    transformStyle: 'preserve-3d',
+    transition: 'transform .15s ease-out, filter .15s ease-out',
     maxWidth: '100%',
-    height: 'auto'
-    
+    height: 'auto',
+    display: 'block',
   };
 };
-
   const handleApply = async () => {
     try {
       await saveAugmentations(params);
