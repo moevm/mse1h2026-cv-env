@@ -1,6 +1,6 @@
 // Augmentation
 export const getAugmentations = async () => {
-  const res = await fetch(`${API_BASE_URL}/api/augmentation/config`);
+  const res = await fetch(`http://localhost:8000/api/augmentation/config`);
   if (!res.ok) {
     throw new Error("Ошибка загрузки конфигурации");
   }
@@ -33,7 +33,7 @@ export const getTrainingConfig = async () => {
 };
 
 export const saveTrainingConfig = async (data) => {
-  const res = await fetch(`${API_BASE_URL}/api/training/config`, {
+  const res = await fetch(`http://localhost:8000/api/training/config`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -49,7 +49,7 @@ export const saveTrainingConfig = async (data) => {
 };
 
 export const startTraining = async (data) => {
-  const res = await fetch(`${API_BASE_URL}/api/training/start`, {
+  const res = await fetch(`http://localhost:8000/api/training/start`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -66,7 +66,7 @@ export const startTraining = async (data) => {
 };
 
 export const validateModel = async (modelName) => {
-  const res = await fetch(`${API_BASE_URL}/api/training/validate-model`, {
+  const res = await fetch(`http://localhost:8000/api/training/validate-model`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -83,7 +83,7 @@ export const validateModel = async (modelName) => {
 };
 
 export const getTrainingStatus = async (taskId) => {
-  const res = await fetch(`${API_BASE_URL}/api/training/status/${taskId}`);
+  const res = await fetch(`http://localhost:8000/api/training/status/${taskId}`);
   if (!res.ok) {
     throw new Error("Ошибка получения статуса обучения");
   }
@@ -91,7 +91,7 @@ export const getTrainingStatus = async (taskId) => {
 };
 
 export const stopTraining = async (taskId) => {
-  const res = await fetch(`${API_BASE_URL}/api/training/stop/${taskId}`, {
+  const res = await fetch(`http://localhost:8000/api/training/stop/${taskId}`, {
     method: "POST",
   });
 
