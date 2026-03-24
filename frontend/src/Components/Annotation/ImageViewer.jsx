@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import ImageAnnotator from "./ImageAnnotator";
+import { parseTxtAnnotations } from "../../utils/txtAnnotationParser";
 import "../../styles/AnnotationView.css";
 
 function ImageViewer({
@@ -12,15 +13,57 @@ function ImageViewer({
   annotationsManager,
 }) {
   const [currentUrl, setCurrentUrl] = useState(null);
+  const [txtAnnotations, setTxtAnnotations] = useState([]);
   const urlsRef = useRef([]); // храним все созданные URL
 
   useEffect(() => {
     if (!image) return;
 
+    let isActive = true;
     const file = image.file;
     const newUrl = URL.createObjectURL(file);
     urlsRef.current.push(newUrl);
     setCurrentUrl(newUrl);
+
+    const loadTxtAnnotations = async () => {
+      if (!image.annotationFile) {
+        if (isActive) {
+          setTxtAnnotations([]);
+        }
+        return;
+      }
+
+      try {
+        const [txtContent, imageSize] = await Promise.all([
+          image.annotationFile.text(),
+          new Promise((resolve, reject) => {
+            const previewImage = new Image();
+            previewImage.onload = () => {
+              resolve({ width: previewImage.naturalWidth, height: previewImage.naturalHeight });
+            };
+            previewImage.onerror = reject;
+            previewImage.src = newUrl;
+          }),
+        ]);
+
+        if (!isActive) return;
+
+        setTxtAnnotations(
+          parseTxtAnnotations(txtContent, imageSize.width, imageSize.height),
+        );
+      } catch (error) {
+        console.error('Не удалось прочитать txt-разметку:', error);
+        if (isActive) {
+          setTxtAnnotations([]);
+        }
+      }
+    };
+
+    loadTxtAnnotations();
+
+    return () => {
+      isActive = false;
+    };
   }, [image]);
 
   // При размонтировании отзываем все созданные URL
@@ -51,6 +94,7 @@ function ImageViewer({
         <ImageAnnotator
           imageUrl={currentUrl}
           imageName={image.name}
+          externalAnnotations={txtAnnotations}
           onClose={onClose}
           annotationsManager={annotationsManager}
         />
