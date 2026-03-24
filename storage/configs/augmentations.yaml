@@ -1,0 +1,20 @@
+augmentation:
+  # Цветовые (HSV)
+  hsv_h: 0.015  
+  hsv_s: 0.7    
+  hsv_v: 0.4   
+
+  # Геометрия
+  degrees: 0.0     # вращение (градусы)
+  translate: 0.1   # смещение (доля изображения)
+  scale: 0.5       
+  shear: 0.0       
+  perspective: 0.0 # перспектива (0.0 - 0.001)
+
+  # Отражения
+  flipud: 0.0   
+  fliplr: 0.5    
+
+  # спец-методы
+  mosaic: 1.0    
+  mixup: 0.0    

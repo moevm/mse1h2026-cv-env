@@ -1,14 +1,12 @@
-/* AUGMENTATION VIEW */
 .augmentation {
   height: 100%;
   display: flex;
   flex-direction: column;
   gap: 24px;
-  padding: 20px;
+  padding: 10px 20px;
   background-color: #f0f2f5;
 }
 
-/* IMAGE FRAME */
 .image-frame {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -24,6 +22,8 @@
   flex-direction: column;
   gap: 16px;
   background-color: #f8f9fa;
+  overflow: hidden; /* Prevent image from overflowing the container bounds */
+  position: relative; 
 }
 
 .image-container h3 {
@@ -33,6 +33,8 @@
   margin: 0;
   padding-bottom: 12px;
   border-bottom: 2px solid #ecf0f1;
+  z-index: 1; /* Ensure title stays above image */
+  position: relative; /* For z-index */
 }
 
 .image-container input[type="file"] {
@@ -55,9 +57,10 @@
   max-width: 100%;
   max-height: 250px;
   object-fit: contain;
+  image-orientation: none; 
+  z-index: 0;
 }
 
-/* AUGMENTАTION CONTROL PANEL */
 .controls {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -68,20 +71,38 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
+
+.control-item label span {
+  color: #3498db;
+  cursor: help;
+}
+
+.tooltip {
+  position: fixed;
+  background-color: #333;
+  color: white;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+  z-index: 1000;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
 .left-controls,
 .right-controls {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 10px;
 }
 
-/* CONTROL ITEMS FOR AUGMENTATION */
 .control-item {
   display: grid;
   grid-template-columns: 120px 1fr auto;
   align-items: center;
   gap: 16px;
-  padding: 12px 16px;
+  padding: 8px 16px;
   background-color: #f8f9fa;
   border-radius: 10px;
   border: 1px solid #ecf0f1;
@@ -128,16 +149,32 @@
   background-color: #3498db;
 }
 
-/* Value display for ranges */
-.control-item input[type="range"] + span {
-  min-width: 45px;
-  font-size: 13px;
-  color: #3498db;
-  font-weight: 600;
-  text-align: right;
-  background-color: #e8f0fe;
+/* Numeric input field for parameter values */
+.control-item input[type="number"] {
+  min-width: 60px;
+  width: 70px;
   padding: 4px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #3498db;
+  background-color: #e8f0fe;
+  border: 1px solid #3498db;
   border-radius: 20px;
+  text-align: right;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.control-item input[type="number"]:hover {
+  background-color: #d0e8ff;
+  border-color: #2980b9;
+}
+
+.control-item input[type="number"]:focus {
+  outline: none;
+  background-color: #ffffff;
+  border-color: #3498db;
+  box-shadow: 0 0 5px rgba(52, 152, 219, 0.3);
 }
 
 /* Checkboxes */
