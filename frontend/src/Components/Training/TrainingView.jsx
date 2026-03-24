@@ -1,14 +1,24 @@
-import React, { useState, useEffect } from "react";
-import { getTrainingConfig, saveTrainingConfig, startTraining, validateModel } from "../../services/api";
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { 
+  getTrainingConfig, 
+  saveTrainingConfig, 
+  startTraining, 
+  validateModel,
+  getTrainingStatus,
+  stopTraining,
+  getAugmentations
+} from "../../services/api";
 import "../../styles/TrainingView.css";
 
-function TrainingView() {
-  const [taskQueue, setTaskQueue] = useState([]);
+function TrainingView({ collection, currentVersionId }) {
+  const [consoleLogs, setConsoleLogs] = useState([]);
+  const [activeTrainings, setActiveTrainings] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
-
+  
   const [params, setParams] = useState({
     model: "yolov8n",
+    modelName: "",
     epochs: 100,
     batch: 16,
     imgsz: 640,
@@ -28,17 +38,115 @@ function TrainingView() {
     warmup_bias_lr: 0.1,
   });
 
-  const [modelError, setModelError] = useState("");
+  const [augmentationParams, setAugmentationParams] = useState(null);
+  
+  const statusIntervals = useRef({});
 
+  const currentVersion = collection?.versions?.find(v => v.id === currentVersionId);
+  
   useEffect(() => {
-    getTrainingConfig()
-      .then((config) => {
-        setParams((prev) => ({ ...prev, ...config }));
-      })
-      .catch(() => {
-        console.log("Используются дефолтные параметры");
-      });
+    loadConfigs();
   }, []);
+
+  const loadConfigs = async () => {
+    try {
+      const trainingConfig = await getTrainingConfig();
+      setParams(prev => ({ ...prev, ...trainingConfig }));
+      addLog("Конфигурация обучения загружена", "success");
+    } catch (error) {
+      addLog(`Ошибка загрузки конфигурации обучения: ${error.message}, используются значения по умолчанию`, "warning");
+    }
+
+    try {
+      const augConfig = await getAugmentations();
+      setAugmentationParams(augConfig);
+      addLog("Конфигурация аугментации загружена", "success");
+    } catch (error) {
+      addLog(`Ошибка загрузки конфигурации аугментации: ${error.message}`, "error");
+    }
+  };
+
+  const addLog = (message, type = "info") => {
+    const timestamp = new Date().toLocaleTimeString();
+    setConsoleLogs(prev => [...prev, { 
+      id: Date.now() + Math.random(), 
+      timestamp, 
+      message, 
+      type 
+    }]);
+  };
+
+  const clearLogs = () => {
+    setConsoleLogs([]);
+  };
+
+  const trackTrainingStatus = useCallback((taskId, modelIdentifier) => {
+    if (statusIntervals.current[taskId]) {
+      clearInterval(statusIntervals.current[taskId]);
+    }
+
+    const interval = setInterval(async () => {
+      try {
+        const status = await getTrainingStatus(taskId);
+        
+        setActiveTrainings(prev => prev.map(task => 
+          task.taskId === taskId 
+            ? { 
+                ...task, 
+                status: status.status, 
+                progress: status.progress || 0,
+                currentEpoch: status.current_epoch,
+                totalEpochs: status.total_epochs,
+                loss: status.loss,
+                lastUpdate: new Date() 
+              }
+            : task
+        ));
+
+        if (status.status === 'completed') {
+          clearInterval(interval);
+          delete statusIntervals.current[taskId];
+          addLog(`Обучение "${modelIdentifier}" успешно завершено`, "success");
+          
+          setTimeout(() => {
+            setActiveTrainings(prev => prev.filter(task => task.taskId !== taskId));
+          }, 5000);
+        }
+        
+        if (status.status === 'failed') {
+          clearInterval(interval);
+          delete statusIntervals.current[taskId];
+          addLog(`Обучение "${modelIdentifier}" не завершено: ${status.error || 'неизвестная ошибка'}`, "error");
+          
+          setTimeout(() => {
+            setActiveTrainings(prev => prev.filter(task => task.taskId !== taskId));
+          }, 10000);
+        }
+        
+      } catch (error) {
+        addLog(`Ошибка получения статуса ${modelIdentifier}: ${error.message}`, "error");
+      }
+    }, 3000);
+    
+    statusIntervals.current[taskId] = interval;
+  }, [addLog]);
+
+  const handleStopTraining = async (taskId, modelIdentifier) => {
+    try {
+      await stopTraining(taskId);
+      addLog(`Обучение "${modelIdentifier}" остановлено пользователем`, "info");
+      
+      if (statusIntervals.current[taskId]) {
+        clearInterval(statusIntervals.current[taskId]);
+        delete statusIntervals.current[taskId];
+      }
+      
+      setActiveTrainings(prev => prev.filter(task => task.taskId !== taskId));
+      
+    } catch (error) {
+      addLog(`Ошибка остановки обучения "${modelIdentifier}": ${error.message}`, "error");
+    }
+  };
 
   const handleChange = (key, value) => {
     setParams((prev) => ({
@@ -47,28 +155,29 @@ function TrainingView() {
     }));
   };
 
-  // Валидация модели на бэкенде
   const validateModelAPI = async (modelName) => {
     if (!modelName.trim()) {
-      setModelError("Пожалуйста, введите название модели");
+      addLog("Пожалуйста, введите название модели", "warning");
       return false;
     }
 
     setIsValidating(true);
-    setModelError("");
 
     try {
       const data = await validateModel(modelName);
       
       if (data.valid) {
         setModelError("");
+        addLog(`Модель "${modelName}" найдена`, "success");
         return true;
       } else {
-        setModelError(data.message || `Модель "${modelName}" не найдена`);
+        const errorMsg = data.message || `Модель "${modelName}" не найдена`;
+        addLog(`${errorMsg}`, "error");
         return false;
       }
     } catch (err) {
-      setModelError(err.message || "Ошибка соединения с сервером");
+      const errorMsg = err.message || "Ошибка соединения с сервером";
+      addLog(`Ошибка валидации: ${errorMsg}`, "error");
       return false;
     } finally {
       setIsValidating(false);
@@ -79,11 +188,10 @@ function TrainingView() {
     try {
       setIsLoading(true);
       await saveTrainingConfig(params);
-      setTaskQueue([...taskQueue, "Конфигурация сохранена"]);
+      addLog("Конфигурация обучения сохранена", "success");
       alert("Конфигурация сохранена");
     } catch (error) {
-      console.error("Ошибка сохранения конфига:", error);
-      setTaskQueue([...taskQueue, "Ошибка сохранения конфигурации"]);
+      addLog(`Ошибка сохранения конфигурации: ${error.message}`, "error");
       alert("Ошибка сохранения конфигурации");
     } finally {
       setIsLoading(false);
@@ -92,37 +200,90 @@ function TrainingView() {
 
   const handleStartTraining = async () => {
     const isValid = await validateModelAPI(params.model);
-    
-    if (!isValid) {
-      setTaskQueue([...taskQueue, `Ошибка: модель "${params.model}" не найдена`]);
-      return;
-    }
+    if (!isValid) return;
+
+    const trainingData = {
+      ...params,
+      
+      augmentations: augmentationParams || {},
+      
+      dataset: {
+        id: collection.id,
+        name: collection.name,
+        versionId: currentVersionId,
+        versionName: currentVersion.name || `Version ${currentVersionId}`,
+        imageCount: currentVersion.images.length,
+        images: currentVersion.images.map(img => img.path || img.name)
+      },
+      
+      modelName: params.modelName.trim() || undefined,
+      
+      timestamp: new Date().toISOString(),
+    };
 
     try {
       setIsLoading(true);
-      await saveTrainingConfig(params);
       
-      const response = await startTraining(params);
+      await saveTrainingConfig(trainingData);
       
-      setTaskQueue([...taskQueue, `Обучение запущено с моделью: ${params.model}`]);
-      alert(`Обучение успешно запущено! Task ID: ${response.task_id || "unknown"}`);
+      const response = await startTraining(trainingData);
+      
+      const modelIdentifier = params.modelName.trim() || params.model;
+      const taskInfo = {
+        taskId: response.task_id,
+        modelIdentifier: modelIdentifier,
+        datasetName: collection.name,
+        versionName: currentVersion.name || `Version ${currentVersionId}`,
+        model: params.model,
+        status: 'running',
+        progress: 0,
+        currentEpoch: 0,
+        totalEpochs: params.epochs,
+        startedAt: new Date(),
+        lastUpdate: new Date()
+      };
+      
+      setActiveTrainings(prev => [...prev, taskInfo]);
+      
+      addLog(`Запущено обучение "${modelIdentifier}"`, "success");
+      addLog(`Task ID: ${response.task_id}`, "info");
+      
+      trackTrainingStatus(response.task_id, modelIdentifier);
+      
+      alert(`Обучение успешно запущено\nTask ID: ${response.task_id}`);
+      
     } catch (error) {
-      console.error("Ошибка запуска обучения:", error);
-      setTaskQueue([...taskQueue, `Ошибка запуска обучения: ${error.message}`]);
+      addLog(`Ошибка запуска обучения: ${error.message}`, "error");
       alert(`Ошибка запуска обучения: ${error.message}`);
     } finally {
       setIsLoading(false);
     }
   };
 
+  useEffect(() => {
+    return () => {
+      Object.values(statusIntervals.current).forEach(interval => clearInterval(interval));
+    };
+  }, []);
+
   return (
     <div className="training-view">
       <div className="params-section">
         <div className="params-left">
-          <h3>Model & Basic Settings</h3>
+          <h3>Модель и базовые настройки</h3>
+          
+          <div className="param-group model-name-group">
+            <label>Имя модели:</label>
+            <input
+              type="text"
+              value={params.modelName}
+              onChange={(e) => handleChange("modelName", e.target.value)}
+              placeholder="Название для новой модели (опционально)"
+            />
+          </div>
           
           <div className="model-group">
-            <label>Model:</label>
+            <label>Базовая модель:</label>
             <div style={{ flex: 1 }}>
               <input
                 type="text"
@@ -133,15 +294,11 @@ function TrainingView() {
               />
             </div>
           </div>
+          
           {isValidating && (
             <div className="validation-indicator">
               <span className="validation-spinner"></span>
               <span className="validation-text">Проверка модели...</span>
-            </div>
-          )}
-          {modelError && (
-            <div className="error-text">
-              {modelError}
             </div>
           )}
           
@@ -206,7 +363,7 @@ function TrainingView() {
         </div>
         
         <div className="params-right">
-          <h3>Optimization & Advanced</h3>
+          <h3>Расширенные настройки</h3>
           
           <div className="param-group checkbox-group">
             <label>save:</label>
@@ -323,35 +480,109 @@ function TrainingView() {
           </div>
         </div>
       </div>
-        
-      <div className="status">
-        <h3>Task Queue:</h3>
-        <ul className="task-list">
-          {taskQueue.map((task, index) => (
-            <li key={index} className={
-              task.includes("Ошибка") ? "error" : 
-              task.includes("успешно") ? "success" : ""
-            }>
-              {task}
-            </li>
-          ))}
-        </ul>
-        <div className="buttons">
-          <button 
-            className="save-config-btn"
-            onClick={handleSaveConfig} 
-            disabled={isLoading}
-          >
-            Save Configuration
-          </button>
-          <button 
-            className="start-training-btn"
-            onClick={handleStartTraining} 
-            disabled={isLoading || isValidating}
-          >
-            Start Training
+      
+      <div className="active-trainings-section">
+        <h3>Активные процессы обучения</h3>
+        {activeTrainings.length === 0 ? (
+          <div className="no-active-trainings">
+            Нет активных процессов обучения
+          </div>
+        ) : (
+          <div className="trainings-list">
+            {activeTrainings.map((training) => (
+              <div key={training.taskId} className="training-item">
+                <div className="training-header">
+                  <div className="training-info">
+                    <span className="training-name">{training.modelIdentifier}</span>
+                    <span className="training-dataset">
+                      на {training.datasetName}
+                      {training.versionName && ` / ${training.versionName}`}
+                    </span>
+                  </div>
+                  <button 
+                    className="stop-training-btn"
+                    onClick={() => handleStopTraining(training.taskId, training.modelIdentifier)}
+                  >
+                    Остановить
+                  </button>
+                </div>
+                <div className="training-details">
+                  <div className="detail-item">
+                    <span>Базовая модель: {training.model}</span>
+                  </div>
+                  <div className="detail-item">
+                    <span>Статус: </span>
+                    <span className={`status-badge status-${training.status}`}>
+                      {training.status === 'running' ? 'Выполняется' : 
+                       training.status === 'completed' ? 'Завершено' : 
+                       training.status === 'failed' ? 'Ошибка' : training.status}
+                    </span>
+                  </div>
+                  {training.currentEpoch > 0 && training.totalEpochs && (
+                    <div className="detail-item">
+                      <span>Эпоха: {training.currentEpoch}/{training.totalEpochs}</span>
+                    </div>
+                  )}
+                  <div className="progress-bar-container">
+                    <div 
+                      className="progress-bar" 
+                      style={{ width: `${training.progress || 0}%` }}
+                    ></div>
+                    <span className="progress-text">{training.progress || 0}%</span>
+                  </div>
+                  {training.loss && (
+                    <div className="detail-item">
+                      <span>Loss: {training.loss.toFixed(4)}</span>
+                    </div>
+                  )}
+                  <div className="detail-item time-info">
+                    <span>Запущено: {training.startedAt.toLocaleTimeString()}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      
+      <div className="console-section">
+        <div className="console-header">
+          <h3>Логи</h3>
+          <button className="clear-console-btn" onClick={clearLogs}>
+            Очистить логи
           </button>
         </div>
+        <div className="console-logs">
+          {consoleLogs.length === 0 ? (
+            <div className="empty-console">
+              Здесь будут отображаться сообщения о процессе обучения
+            </div>
+          ) : (
+            consoleLogs.map((log) => (
+              <div key={log.id} className={`log-entry log-${log.type}`}>
+                <span className="log-time">[{log.timestamp}]</span>
+                <span className="log-message">{log.message}</span>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+      
+      <div className="buttons">
+        <button 
+          className="save-config-btn"
+          onClick={handleSaveConfig} 
+          disabled={isLoading}
+        >
+          Save Configuration
+        </button>
+        <button 
+          className="start-training-btn"
+          onClick={handleStartTraining} 
+          disabled={isLoading || isValidating}
+        >
+          Start Training
+        </button>
       </div>
     </div>
   );
