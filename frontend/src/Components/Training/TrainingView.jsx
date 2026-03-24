@@ -179,7 +179,6 @@ function TrainingView({ collection, currentVersionId }) {
       const data = await validateModel(modelName);
       
       if (data.valid) {
-        setModelError("");
         addLog(`Модель "${modelName}" найдена`, "success");
         return true;
       } else {

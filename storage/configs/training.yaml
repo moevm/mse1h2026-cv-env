@@ -1,0 +1,20 @@
+training:
+  batch: 16
+  cache: false
+  device: auto
+  epochs: 100
+  imgsz: 640
+  lr0: 0.01
+  lrf: 0.01
+  model: yolov8n
+  modelName: null
+  momentum: 0.937
+  optimizer: SGD
+  patience: 50
+  save: true
+  save_period: -1
+  warmup_bias_lr: 0.1
+  warmup_epochs: 3
+  warmup_momentum: 0.8
+  weight_decay: 0.0005
+  workers: 8
