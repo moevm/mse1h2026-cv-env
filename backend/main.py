@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from core.paths import ensure_directories
-from api import augmentation_router
+from api import augmentation_router, training_router
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
@@ -15,3 +15,4 @@ app.add_middleware(
 ensure_directories()  # создаёт storage при старте
 
 app.include_router(augmentation_router.router)
+app.include_router(training_router.router)
