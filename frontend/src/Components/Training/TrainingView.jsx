@@ -80,6 +80,57 @@ function TrainingView({ collection, currentVersionId }) {
     setConsoleLogs([]);
   };
 
+  const trackTrainingStatus = useCallback((taskId, modelIdentifier) => {
+    if (statusIntervals.current[taskId]) {
+      clearInterval(statusIntervals.current[taskId]);
+    }
+
+    const interval = setInterval(async () => {
+      try {
+        const status = await getTrainingStatus(taskId);
+        
+        setActiveTrainings(prev => prev.map(task => 
+          task.taskId === taskId 
+            ? { 
+                ...task, 
+                status: status.status, 
+                progress: status.progress || 0,
+                currentEpoch: status.current_epoch,
+                totalEpochs: status.total_epochs,
+                loss: status.loss,
+                lastUpdate: new Date() 
+              }
+            : task
+        ));
+
+        if (status.status === 'completed') {
+          clearInterval(interval);
+          delete statusIntervals.current[taskId];
+          addLog(`Обучение "${modelIdentifier}" успешно завершено`, "success");
+          
+          setTimeout(() => {
+            setActiveTrainings(prev => prev.filter(task => task.taskId !== taskId));
+          }, 5000);
+        }
+        
+        if (status.status === 'failed') {
+          clearInterval(interval);
+          delete statusIntervals.current[taskId];
+          addLog(`Обучение "${modelIdentifier}" не завершено: ${status.error || 'неизвестная ошибка'}`, "error");
+          
+          setTimeout(() => {
+            setActiveTrainings(prev => prev.filter(task => task.taskId !== taskId));
+          }, 10000);
+        }
+        
+      } catch (error) {
+        addLog(`Ошибка получения статуса ${modelIdentifier}: ${error.message}`, "error");
+      }
+    }, 3000);
+    
+    statusIntervals.current[taskId] = interval;
+  }, [addLog]);
+
   const handleStopTraining = async (taskId, modelIdentifier) => {
     try {
       await stopTraining(taskId);
@@ -196,6 +247,8 @@ function TrainingView({ collection, currentVersionId }) {
       
       addLog(`Запущено обучение "${modelIdentifier}"`, "success");
       addLog(`Task ID: ${response.task_id}`, "info");
+      
+      trackTrainingStatus(response.task_id, modelIdentifier);
       
       alert(`Обучение успешно запущено\nTask ID: ${response.task_id}`);
       
@@ -430,6 +483,66 @@ function TrainingView({ collection, currentVersionId }) {
       
       <div className="active-trainings-section">
         <h3>Активные процессы обучения</h3>
+        {activeTrainings.length === 0 ? (
+          <div className="no-active-trainings">
+            Нет активных процессов обучения
+          </div>
+        ) : (
+          <div className="trainings-list">
+            {activeTrainings.map((training) => (
+              <div key={training.taskId} className="training-item">
+                <div className="training-header">
+                  <div className="training-info">
+                    <span className="training-name">{training.modelIdentifier}</span>
+                    <span className="training-dataset">
+                      на {training.datasetName}
+                      {training.versionName && ` / ${training.versionName}`}
+                    </span>
+                  </div>
+                  <button 
+                    className="stop-training-btn"
+                    onClick={() => handleStopTraining(training.taskId, training.modelIdentifier)}
+                  >
+                    Остановить
+                  </button>
+                </div>
+                <div className="training-details">
+                  <div className="detail-item">
+                    <span>Базовая модель: {training.model}</span>
+                  </div>
+                  <div className="detail-item">
+                    <span>Статус: </span>
+                    <span className={`status-badge status-${training.status}`}>
+                      {training.status === 'running' ? 'Выполняется' : 
+                       training.status === 'completed' ? 'Завершено' : 
+                       training.status === 'failed' ? 'Ошибка' : training.status}
+                    </span>
+                  </div>
+                  {training.currentEpoch > 0 && training.totalEpochs && (
+                    <div className="detail-item">
+                      <span>Эпоха: {training.currentEpoch}/{training.totalEpochs}</span>
+                    </div>
+                  )}
+                  <div className="progress-bar-container">
+                    <div 
+                      className="progress-bar" 
+                      style={{ width: `${training.progress || 0}%` }}
+                    ></div>
+                    <span className="progress-text">{training.progress || 0}%</span>
+                  </div>
+                  {training.loss && (
+                    <div className="detail-item">
+                      <span>Loss: {training.loss.toFixed(4)}</span>
+                    </div>
+                  )}
+                  <div className="detail-item time-info">
+                    <span>Запущено: {training.startedAt.toLocaleTimeString()}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
       
       <div className="console-section">
