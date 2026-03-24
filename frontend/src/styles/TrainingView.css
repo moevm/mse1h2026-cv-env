@@ -1,4 +1,3 @@
-/* TRAINING VIEW */
 .training-view {
   height: 100%;
   display: flex;
@@ -8,7 +7,6 @@
   background-color: #f0f2f5;
 }
 
-/* Верхняя секция с параметрами (2 колонки) */
 .training-view .params-section {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -19,7 +17,6 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
-/* Левая и правая колонки */
 .training-view .params-left,
 .training-view .params-right {
   display: flex;
@@ -27,7 +24,6 @@
   gap: 16px;
 }
 
-/* Заголовки секций */
 .training-view .params-section h3,
 .training-view .status h3 {
   color: #2c3e50;
@@ -38,7 +34,6 @@
   border-bottom: 2px solid #ecf0f1;
 }
 
-/* Общий стиль для групп полей */
 .training-view .param-group {
   display: grid;
   grid-template-columns: 120px 1fr;
@@ -64,7 +59,6 @@
   white-space: nowrap;
 }
 
-/* Стили для инпутов и селектов */
 .training-view .param-group input,
 .training-view .param-group select {
   width: 100%;
@@ -87,7 +81,6 @@
   cursor: not-allowed;
 }
 
-/* Специальный стиль для поля модели */
 .training-view .model-group {
   display: grid;
   grid-template-columns: 120px 1fr;
@@ -132,7 +125,6 @@
   cursor: not-allowed;
 }
 
-/* Чекбоксы */
 .training-view .param-group input[type="checkbox"] {
   width: 20px;
   height: 20px;
@@ -143,12 +135,10 @@
   justify-self: start;
 }
 
-/* Специальная группа для чекбоксов */
 .training-view .param-group.checkbox-group {
   grid-template-columns: 120px auto;
 }
 
-/* Индикатор проверки модели */
 .training-view .validation-indicator {
   display: flex;
   align-items: center;
@@ -178,14 +168,6 @@
   color: #666;
 }
 
-.training-view .error-text {
-  font-size: 12px;
-  color: #e74c3c;
-  margin-top: 4px;
-  margin-left: 136px;
-}
-
-/* Нижняя секция с очередью и кнопками */
 .training-view .status {
   background-color: white;
   border-radius: 12px;
@@ -197,7 +179,6 @@
   margin-bottom: 16px;
 }
 
-/* Список очереди задач */
 .training-view .task-list {
   list-style: none;
   padding: 0;
@@ -235,7 +216,6 @@
   color: #27ae60;
 }
 
-/* Кнопки действий */
 .training-view .buttons {
   display: flex;
   gap: 16px;
@@ -283,7 +263,6 @@
   box-shadow: none;
 }
 
-/* Responsive Design */
 @media (max-width: 1024px) {
   .training-view .params-section {
     grid-template-columns: 1fr;
@@ -300,9 +279,6 @@
   }
 
   .training-view .validation-indicator,
-  .training-view .error-text {
-    margin-left: 0;
-  }
 
   .training-view .model-group {
     grid-template-columns: 1fr;
@@ -331,5 +307,276 @@
 
   .training-view .task-list {
     max-height: 150px;
+  }
+}
+
+.training-view .model-name-group {
+  background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+  border-color: #9b59b6;
+}
+
+.training-view .active-trainings-section {
+  background-color: white;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.training-view .active-trainings-section h3 {
+  color: #2c3e50;
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 16px 0;
+  padding-bottom: 12px;
+  border-bottom: 2px solid #ecf0f1;
+}
+
+.training-view .trainings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.training-view .training-item {
+  background-color: #f8f9fa;
+  border-radius: 10px;
+  padding: 16px;
+  border-left: 4px solid #3498db;
+  transition: all 0.3s;
+}
+
+.training-view .training-item:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transform: translateX(4px);
+}
+
+.training-view .training-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.training-view .training-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.training-view .training-name {
+  font-weight: 600;
+  color: #2c3e50;
+  font-size: 16px;
+}
+
+.training-view .stop-training-btn {
+  background-color: #e74c3c;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.training-view .stop-training-btn:hover {
+  background-color: #c0392b;
+  transform: scale(1.05);
+}
+
+.training-view .training-details {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.training-view .detail-item {
+  font-size: 13px;
+  color: #555;
+}
+
+.training-view .status-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.training-view .status-running {
+  background-color: #3498db;
+  color: white;
+}
+
+.training-view .status-completed {
+  background-color: #27ae60;
+  color: white;
+}
+
+.training-view .status-failed {
+  background-color: #e74c3c;
+  color: white;
+}
+
+.training-view .progress-bar-container {
+  position: relative;
+  background-color: #e0e0e0;
+  border-radius: 10px;
+  height: 20px;
+  overflow: hidden;
+}
+
+.training-view .progress-bar {
+  background: linear-gradient(90deg, #3498db, #2980b9);
+  height: 100%;
+  transition: width 0.3s ease;
+  border-radius: 10px;
+}
+
+.training-view .progress-text {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 11px;
+  font-weight: 600;
+  color: white;
+  text-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
+}
+
+.training-view .time-info {
+  font-size: 11px;
+  color: #95a5a6;
+}
+
+.training-view .console-section {
+  background-color: #1e1e1e;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  color: #d4d4d4;
+}
+
+.training-view .console-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #333;
+}
+
+.training-view .console-header h3 {
+  color: #4ec9b0;
+  margin: 0;
+  font-size: 16px;
+}
+
+.training-view .clear-console-btn {
+  background-color: #e74c3c;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.training-view .clear-console-btn:hover {
+  background-color: #c0392b;
+}
+
+.training-view .console-logs {
+  background-color: #252526;
+  border-radius: 8px;
+  padding: 12px;
+  max-height: 300px;
+  overflow-y: auto;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+}
+
+.training-view .empty-console {
+  color: #858585;
+  text-align: center;
+  padding: 20px;
+  font-style: italic;
+}
+
+.training-view .log-entry {
+  padding: 6px 8px;
+  margin-bottom: 4px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 12px;
+  border-left: 3px solid transparent;
+}
+
+.training-view .log-time {
+  color: #858585;
+  margin-right: 12px;
+  font-family: monospace;
+}
+
+.training-view .log-message {
+  color: #d4d4d4;
+}
+
+.training-view .log-success {
+  border-left-color: #27ae60;
+  background-color: rgba(39, 174, 96, 0.1);
+}
+
+.training-view .log-success .log-message {
+  color: #27ae60;
+}
+
+.training-view .log-error {
+  border-left-color: #e74c3c;
+  background-color: rgba(231, 76, 60, 0.1);
+}
+
+.training-view .log-error .log-message {
+  color: #e74c3c;
+  font-weight: 500;
+}
+
+.training-view .log-warning {
+  border-left-color: #f39c12;
+  background-color: rgba(243, 156, 18, 0.1);
+}
+
+.training-view .log-warning .log-message {
+  color: #f39c12;
+}
+
+.training-view .log-info {
+  border-left-color: #3498db;
+  background-color: rgba(52, 152, 219, 0.05);
+}
+
+.training-view .log-info .log-message {
+  color: #3498db;
+}
+
+@media (max-width: 768px) {
+  .training-view .training-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  
+  .training-view .training-info {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .training-view .console-header {
+    flex-direction: column;
+    gap: 12px;
+    align-items: flex-start;
   }
 }
