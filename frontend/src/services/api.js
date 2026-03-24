@@ -101,3 +101,11 @@ export const stopTraining = async (taskId) => {
 
   return await res.json();
 };
+
+export const getTrainingLogs = async (taskId, limit = 100) => {
+  const res = await fetch(`http://localhost:8000/api/training/logs/${taskId}?limit=${limit}`);
+  if (!res.ok) {
+    throw new Error("Ошибка получения логов обучения");
+  }
+  return await res.json();
+};

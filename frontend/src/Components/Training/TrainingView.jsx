@@ -6,8 +6,10 @@ import {
   validateModel,
   getTrainingStatus,
   stopTraining,
-  getAugmentations
+  getAugmentations,
+  getTrainingLogs
 } from "../../services/api";
+import { useWebSocket } from "../../hooks/useWebSocket"
 import "../../styles/TrainingView.css";
 
 function TrainingView({ collection, currentVersionId }) {
@@ -15,6 +17,9 @@ function TrainingView({ collection, currentVersionId }) {
   const [activeTrainings, setActiveTrainings] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
+
+  const [selectedTaskId, setSelectedTaskId] = useState(null);
+  const { status: wsStatus, isConnected: wsConnected } = useWebSocket(selectedTaskId);
   
   const [params, setParams] = useState({
     model: "yolov8n",
@@ -44,6 +49,51 @@ function TrainingView({ collection, currentVersionId }) {
 
   const currentVersion = collection?.versions?.find(v => v.id === currentVersionId);
   
+  useEffect(() => {
+    if (wsStatus && selectedTaskId) {
+      setActiveTrainings(prev => prev.map(task => 
+        task.taskId === selectedTaskId 
+          ? { 
+              ...task, 
+              status: wsStatus.status,
+              progress: wsStatus.progress || 0,
+              currentEpoch: wsStatus.current_epoch,
+              totalEpochs: wsStatus.total_epochs,
+              loss: wsStatus.loss,
+              lastUpdate: new Date() 
+            }
+          : task
+      ));
+      
+      if (wsStatus.status === 'completed') {
+        addLog(`Обучение "${selectedTaskId}" успешно завершено`, "success");
+        
+        setTimeout(() => {
+          setSelectedTaskId(null);
+          setActiveTrainings(prev => prev.filter(task => task.taskId !== selectedTaskId));
+        }, 5000);
+      }
+      
+      if (wsStatus.status === 'failed') {
+        addLog(`Обучение "${selectedTaskId}" не завершено: ${wsStatus.error || 'неизвестная ошибка'}`, "error");
+        
+        setTimeout(() => {
+          setSelectedTaskId(null);
+          setActiveTrainings(prev => prev.filter(task => task.taskId !== selectedTaskId));
+        }, 10000);
+      }
+      
+      if (wsStatus.status === 'stopped') {
+        addLog(`Обучение "${selectedTaskId}" остановлено`, "warning");
+        
+        setTimeout(() => {
+          setSelectedTaskId(null);
+          setActiveTrainings(prev => prev.filter(task => task.taskId !== selectedTaskId));
+        }, 5000);
+      }
+    }
+  }, [wsStatus, selectedTaskId]);
+
   useEffect(() => {
     loadConfigs();
   }, []);
@@ -80,56 +130,18 @@ function TrainingView({ collection, currentVersionId }) {
     setConsoleLogs([]);
   };
 
-  const trackTrainingStatus = useCallback((taskId, modelIdentifier) => {
-    if (statusIntervals.current[taskId]) {
-      clearInterval(statusIntervals.current[taskId]);
-    }
-
-    const interval = setInterval(async () => {
-      try {
-        const status = await getTrainingStatus(taskId);
-        
-        setActiveTrainings(prev => prev.map(task => 
-          task.taskId === taskId 
-            ? { 
-                ...task, 
-                status: status.status, 
-                progress: status.progress || 0,
-                currentEpoch: status.current_epoch,
-                totalEpochs: status.total_epochs,
-                loss: status.loss,
-                lastUpdate: new Date() 
-              }
-            : task
-        ));
-
-        if (status.status === 'completed') {
-          clearInterval(interval);
-          delete statusIntervals.current[taskId];
-          addLog(`Обучение "${modelIdentifier}" успешно завершено`, "success");
-          
-          setTimeout(() => {
-            setActiveTrainings(prev => prev.filter(task => task.taskId !== taskId));
-          }, 5000);
-        }
-        
-        if (status.status === 'failed') {
-          clearInterval(interval);
-          delete statusIntervals.current[taskId];
-          addLog(`Обучение "${modelIdentifier}" не завершено: ${status.error || 'неизвестная ошибка'}`, "error");
-          
-          setTimeout(() => {
-            setActiveTrainings(prev => prev.filter(task => task.taskId !== taskId));
-          }, 10000);
-        }
-        
-      } catch (error) {
-        addLog(`Ошибка получения статуса ${modelIdentifier}: ${error.message}`, "error");
+  const loadTrainingLogs = async (taskId) => {
+    try {
+      const response = await getTrainingLogs(taskId, 50);
+      if (response.logs && response.logs.length > 0) {
+        response.logs.forEach(log => {
+          addLog(log, "info");
+        });
       }
-    }, 3000);
-    
-    statusIntervals.current[taskId] = interval;
-  }, [addLog]);
+    } catch (error) {
+      console.error("Error loading logs:", error);
+    }
+  };
 
   const handleStopTraining = async (taskId, modelIdentifier) => {
     try {
@@ -248,7 +260,7 @@ function TrainingView({ collection, currentVersionId }) {
       addLog(`Запущено обучение "${modelIdentifier}"`, "success");
       addLog(`Task ID: ${response.task_id}`, "info");
       
-      trackTrainingStatus(response.task_id, modelIdentifier);
+      setSelectedTaskId(response.task_id);
       
       alert(`Обучение успешно запущено\nTask ID: ${response.task_id}`);
       
