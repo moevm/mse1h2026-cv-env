@@ -101,3 +101,35 @@ export const stopTraining = async (taskId) => {
 
   return await res.json();
 };
+
+export const exportDataset = async ({ collectionName, classes, items }) => {
+  const formData = new FormData();
+  formData.append("collection_name", collectionName);
+
+  const metadata = {
+    classes,
+    items: items.map((item, uploadIndex) => ({
+      uploadIndex,
+      originalFileName: item.file.name,
+      relativePath: item.relativePath,
+      annotationTxt: item.annotationTxt,
+    })),
+  };
+
+  formData.append("metadata_json", JSON.stringify(metadata));
+  items.forEach((item) => {
+    formData.append("files", item.file, item.file.name);
+  });
+
+  const res = await fetch("http://localhost:8000/api/datasets/export", {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.detail || "Ошибка экспорта датасета");
+  }
+
+  return await res.json();
+};
