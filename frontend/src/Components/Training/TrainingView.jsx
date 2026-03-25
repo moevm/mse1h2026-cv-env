@@ -7,7 +7,8 @@ import {
   getTrainingStatus,
   stopTraining,
   getAugmentations,
-  getTrainingLogs
+  getTrainingLogs,
+  getDataset
 } from "../../services/api";
 import "../../styles/TrainingView.css";
 
@@ -16,6 +17,8 @@ function TrainingView({ collection, currentVersionId }) {
   const [activeTrainings, setActiveTrainings] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
+  const [datasetYamlPath, setDatasetYamlPath] = useState(null);
+  const [isLoadingYaml, setIsLoadingYaml] = useState(false);
   const completedTasksRef = useRef(new Set());
   const websocketsRef = useRef({});
   
@@ -183,6 +186,29 @@ function TrainingView({ collection, currentVersionId }) {
     }
   };
 
+  useEffect(() => {
+    const loadDatasetYamlPath = async () => {
+      if (!collection?.name) {
+        setDatasetYamlPath(null);
+        return;
+      }
+
+      setIsLoadingYaml(true);
+      try {
+        const result = await getDataset(collection.name);
+        setDatasetYamlPath(result.yaml_path);
+        addLog(`Путь к датасету ${result.dataset_name} загружен`, "success");
+      } catch (error) {
+        addLog(`Ошибка загрузки пути к датасету: ${error.message}`, "error");
+        setDatasetYamlPath(null);
+      } finally {
+        setIsLoadingYaml(false);
+      }
+    };
+
+    loadDatasetYamlPath();
+  }, [collection?.name, addLog]);
+
   const clearLogs = () => {
     setConsoleLogs([]);
   };
@@ -269,7 +295,7 @@ function TrainingView({ collection, currentVersionId }) {
         name: collection.name,
         versionId: currentVersionId || "",
         versionName: currentVersion?.name || `Version ${currentVersionId || "unknown"}`,
-        yaml_path: "coco8.yaml"
+        yaml_path: datasetYamlPath || "coco8.yaml"
       },
       modelName: params.modelName && typeof params.modelName === 'string' 
         ? params.modelName

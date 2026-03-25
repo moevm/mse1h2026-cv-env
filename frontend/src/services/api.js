@@ -169,10 +169,11 @@ export const deleteStoredDataset = async (datasetName) => {
   return await res.json();
 };
 
-export const getDataset = async () => {
-  const res = await fetch(`${API_BASE_URL}/api/datasets/config`);
+export const getDataset = async (datasetName) => {
+  const res = await fetch(`${API_BASE_URL}/api/datasets/${encodeURIComponent(datasetName)}/yaml-path`);
   if (!res.ok) {
-    throw new Error("Ошибка загрузки конфигурации");
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.detail || "Ошибка получения пути к dataset.yaml");
   }
   return await res.json();
 };
