@@ -49,8 +49,8 @@ def _normalize_relative_path(relative_path: str | None, fallback_name: str) -> s
 def _build_dataset_yaml(classes: list[str]) -> dict[str, Any]:
     return {
         "path": ".",
-        "train": "images/train",
-        "val": "images/val",
+        "train": "train/images",
+        "val": "val/images",
         "test": None,
         "names": {index: class_name for index, class_name in enumerate(classes)},
     }
@@ -96,7 +96,7 @@ def _quote_path_parts(path_value: str) -> str:
 
 def _resolve_dataset_subpath(dataset_name: str, base_dir_name: str, nested_path: str) -> str:
     safe_dataset_name = _sanitize_dataset_name(dataset_name)
-    dataset_root = Path(DATASETS_DIR).resolve() / safe_dataset_name / base_dir_name
+    dataset_root = (Path(DATASETS_DIR).resolve() / safe_dataset_name / base_dir_name).resolve()
     requested_path = Path(*[part for part in PurePosixPath(nested_path).parts if part not in {"", ".", ".."}])
     resolved_path = (dataset_root / requested_path).resolve()
 
@@ -107,19 +107,51 @@ def _resolve_dataset_subpath(dataset_name: str, base_dir_name: str, nested_path:
 
 
 def _collect_image_entries(dataset_name: str, dataset_dir: str) -> list[dict[str, Any]]:
-    images_root = Path(dataset_dir) / "images"
-    labels_root = Path(dataset_dir) / "labels"
+    dataset_root = Path(dataset_dir)
+    collected: list[dict[str, Any]] = []
 
+    # New layout: train/images, train/labels, val/images, val/labels
+    for split_name in ("train", "val"):
+        image_source = dataset_root / split_name / "images"
+        label_source = dataset_root / split_name / "labels"
+        if not image_source.is_dir():
+            continue
+
+        for image_path in sorted(image_source.rglob("*"), key=lambda item: str(item).lower()):
+            if not image_path.is_file() or image_path.suffix.lower() not in IMAGE_EXTENSIONS:
+                continue
+
+            relative_in_group = image_path.relative_to(image_source).as_posix()
+            stored_image_path = image_path.relative_to(dataset_root).as_posix()
+            label_path = (label_source / relative_in_group).with_suffix(".txt")
+            annotation_text = _read_text_file(str(label_path)) if label_path.is_file() else ""
+
+            collected.append(
+                {
+                    "name": image_path.name,
+                    "relativePath": relative_in_group,
+                    "storedPath": stored_image_path,
+                    "split": split_name,
+                    "url": f"/api/datasets/{quote(dataset_name)}/files/{_quote_path_parts(stored_image_path)}",
+                    "annotationText": annotation_text,
+                }
+            )
+
+    if collected:
+        return collected
+
+    # Backward-compatible layouts: images/train + labels/train OR flat images + labels
+    images_root = dataset_root / "images"
+    labels_root = dataset_root / "labels"
     if not images_root.is_dir():
         return []
 
-    collected: list[dict[str, Any]] = []
     has_split_dirs = any((images_root / split_name).is_dir() for split_name in ("train", "val"))
-
-    if has_split_dirs:
-        split_sources = [(split_name, images_root / split_name, labels_root / split_name) for split_name in ("train", "val")]
-    else:
-        split_sources = [(None, images_root, labels_root)]
+    split_sources = (
+        [(split_name, images_root / split_name, labels_root / split_name) for split_name in ("train", "val")]
+        if has_split_dirs
+        else [(None, images_root, labels_root)]
+    )
 
     for split_name, image_source, label_source in split_sources:
         if not image_source.is_dir():
@@ -130,7 +162,7 @@ def _collect_image_entries(dataset_name: str, dataset_dir: str) -> list[dict[str
                 continue
 
             relative_in_group = image_path.relative_to(image_source).as_posix()
-            stored_image_path = image_path.relative_to(images_root).as_posix()
+            stored_image_path = image_path.relative_to(dataset_root).as_posix()
             label_path = (label_source / relative_in_group).with_suffix(".txt")
             annotation_text = _read_text_file(str(label_path)) if label_path.is_file() else ""
 
@@ -140,7 +172,7 @@ def _collect_image_entries(dataset_name: str, dataset_dir: str) -> list[dict[str
                     "relativePath": relative_in_group,
                     "storedPath": stored_image_path,
                     "split": split_name,
-                    "url": f"/api/datasets/{quote(dataset_name)}/images/{_quote_path_parts(stored_image_path)}",
+                    "url": f"/api/datasets/{quote(dataset_name)}/files/{_quote_path_parts(stored_image_path)}",
                     "annotationText": annotation_text,
                 }
             )
@@ -232,9 +264,9 @@ def delete_dataset(dataset_name: str):
     return {"status": "success", "dataset_name": safe_dataset_name}
 
 
-@router.get("/{dataset_name}/images/{image_path:path}")
-def get_dataset_image(dataset_name: str, image_path: str):
-    file_path = _resolve_dataset_subpath(dataset_name, "images", image_path)
+@router.get("/{dataset_name}/files/{file_path:path}")
+def get_dataset_file(dataset_name: str, file_path: str):
+    file_path = _resolve_dataset_subpath(dataset_name, "", file_path)
 
     if not os.path.isfile(file_path):
         raise HTTPException(status_code=404, detail="Изображение не найдено")
@@ -270,11 +302,17 @@ async def export_dataset(
         shutil.rmtree(dataset_dir)
 
     os.makedirs(dataset_dir, exist_ok=True)
-    image_root = Path(dataset_dir) / "images"
-    label_root = Path(dataset_dir) / "labels"
-    for split_name in ("train", "val"):
-        (image_root / split_name).mkdir(parents=True, exist_ok=True)
-        (label_root / split_name).mkdir(parents=True, exist_ok=True)
+    dataset_root = Path(dataset_dir)
+    split_dirs = {
+        split_name: {
+            "images": dataset_root / split_name / "images",
+            "labels": dataset_root / split_name / "labels",
+        }
+        for split_name in ("train", "val")
+    }
+    for paths in split_dirs.values():
+        paths["images"].mkdir(parents=True, exist_ok=True)
+        paths["labels"].mkdir(parents=True, exist_ok=True)
 
     split_plan = _build_split_plan(items, train_percent)
 
@@ -292,8 +330,8 @@ async def export_dataset(
             split_name = item["split"]
             annotation_txt = (item.get("annotationTxt") or "").strip()
 
-            image_path = (image_root / split_name / relative_path).resolve()
-            label_path = (label_root / split_name / relative_path).with_suffix(".txt").resolve()
+            image_path = (split_dirs[split_name]["images"] / relative_path).resolve()
+            label_path = (split_dirs[split_name]["labels"] / relative_path).with_suffix(".txt").resolve()
             image_path.parent.mkdir(parents=True, exist_ok=True)
             label_path.parent.mkdir(parents=True, exist_ok=True)
 
