@@ -30,7 +30,7 @@ function polygonToBbox(annotation) {
 
 export function annotationToYoloLine(annotation, classIndex, imageWidth, imageHeight) {
   if (!imageWidth || !imageHeight || classIndex == null) {
-    return null;
+    return null; 
   }
 
   let bbox = null;
