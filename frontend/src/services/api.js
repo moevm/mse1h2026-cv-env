@@ -146,3 +146,17 @@ export const exportDataset = async ({ collectionName, classes, items }) => {
 
   return await res.json();
 };
+
+
+export const deleteStoredDataset = async (datasetName) => {
+  const res = await fetch(`${API_BASE_URL}/api/datasets/${encodeURIComponent(datasetName)}`, {
+    method: "DELETE",
+  });
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.detail || "Ошибка удаления коллекции");
+  }
+
+  return await res.json();
+};

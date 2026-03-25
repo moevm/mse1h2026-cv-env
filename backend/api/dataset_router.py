@@ -139,6 +139,18 @@ def list_datasets():
     return {"datasets": datasets}
 
 
+@router.delete("/{dataset_name}")
+def delete_dataset(dataset_name: str):
+    safe_dataset_name = _sanitize_dataset_name(dataset_name)
+    dataset_dir = os.path.join(DATASETS_DIR, safe_dataset_name)
+
+    if not os.path.isdir(dataset_dir):
+        raise HTTPException(status_code=404, detail="Коллекция не найдена")
+
+    shutil.rmtree(dataset_dir)
+    return {"status": "success", "dataset_name": safe_dataset_name}
+
+
 @router.get("/{dataset_name}/images/{image_name}")
 def get_dataset_image(dataset_name: str, image_name: str):
     safe_dataset_name = _sanitize_dataset_name(dataset_name)

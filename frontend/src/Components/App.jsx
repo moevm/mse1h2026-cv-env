@@ -54,7 +54,24 @@ function App() {
     setShowUploader(true);
   }
 
-  function handleDeleteCollection() {}
+  async function handleDeleteCollection(collectionId) {
+    const collection = getCollection(collectionId);
+    if (!collection) {
+      return;
+    }
+
+    const confirmed = window.confirm(`Удалить коллекцию "${collection.name}"?`);
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      await removeCollection(collectionId);
+    } catch (error) {
+      console.error("Delete failed:", error);
+      window.alert(`Не удалось удалить коллекцию: ${error.message}`);
+    }
+  }
 
   async function handleFolderUpload(files, collectionName, directoryHandle) {
     const collectionId = addCollection(files, collectionName, directoryHandle);

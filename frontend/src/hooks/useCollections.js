@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { getAllFilesFromDirectory } from "../utils/fileSystem";
-import { getStoredDatasets } from "../services/api";
+import { deleteStoredDataset, getStoredDatasets } from "../services/api";
 
 function buildImagesWithAnnotations(files) {
   const allFiles = Array.from(files);
@@ -112,8 +112,18 @@ function useCollections() {
     return newCollection.id;
   };
 
-  const removeCollection = (collectionId) => {
+  const removeCollection = async (collectionId) => {
+    const collection = collections.find((c) => c.id === collectionId);
+    if (!collection) {
+      return false;
+    }
+
+    if (collection.persisted) {
+      await deleteStoredDataset(collection.datasetName || collection.id);
+    }
+
     setCollections((prev) => prev.filter((c) => c.id !== collectionId));
+    return true;
   };
 
   const getCollection = (collectionId) => {
