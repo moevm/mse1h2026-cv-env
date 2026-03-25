@@ -114,12 +114,13 @@ export const getStoredDatasets = async () => {
   return await res.json();
 };
 
-export const exportDataset = async ({ collectionName, classes, items }) => {
+export const exportDataset = async ({ collectionName, classes, items, trainPercent }) => {
   const formData = new FormData();
   formData.append("collection_name", collectionName);
 
   const metadata = {
     collection_name: collectionName,
+    trainPercent,
     classes,
     items: items.map((item, uploadIndex) => ({
       uploadIndex,

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { getAllFilesFromDirectory } from "../utils/fileSystem";
 import { deleteStoredDataset, getStoredDatasets } from "../services/api";
 
+const DEFAULT_TRAIN_SPLIT_PERCENT = 80;
+
 function buildImagesWithAnnotations(files) {
   const allFiles = Array.from(files);
   const imageFiles = allFiles.filter((file) => file.type.startsWith("image/"));
@@ -20,10 +22,11 @@ function buildImagesWithAnnotations(files) {
   );
 
   const sortedImageFiles = imageFiles.sort((a, b) =>
-    a.name.localeCompare(b.name, undefined, {
-      numeric: true,
-      sensitivity: "base",
-    }),
+    (a.webkitRelativePath || a.relativePath || a.name).localeCompare(
+      b.webkitRelativePath || b.relativePath || b.name,
+      undefined,
+      { numeric: true, sensitivity: "base" },
+    ),
   );
 
   return sortedImageFiles.map((file) => {
@@ -37,6 +40,7 @@ function buildImagesWithAnnotations(files) {
       type: file.type,
       size: file.size,
       relativePath,
+      split: null,
       annotationFile: txtByStem.get(stemKey) || null,
       annotationText: null,
     };
@@ -52,20 +56,31 @@ function buildStoredCollection(dataset) {
         type: "image/*",
         size: null,
         relativePath: image.relativePath || image.name,
+        storedPath: image.storedPath || null,
+        split: image.split || null,
         annotationFile: null,
         annotationText: image.annotationText || "",
       }))
     : [];
 
+  const trainSplitPercent = Number.isFinite(dataset.trainSplitPercent)
+    ? dataset.trainSplitPercent
+    : DEFAULT_TRAIN_SPLIT_PERCENT;
+
   return {
     id: dataset.id || dataset.datasetName || dataset.name,
     datasetName: dataset.datasetName || dataset.id || dataset.name,
+    datasetYamlPath: dataset.datasetYamlPath || null,
     name: dataset.name || dataset.datasetName || "Коллекция",
     date: dataset.date || new Date().toISOString(),
     images,
     imageCount: typeof dataset.imageCount === "number" ? dataset.imageCount : images.length,
     directoryHandle: null,
     persisted: true,
+    trainSplitPercent,
+    valSplitPercent: Number.isFinite(dataset.valSplitPercent)
+      ? dataset.valSplitPercent
+      : 100 - trainSplitPercent,
   };
 }
 
@@ -106,6 +121,8 @@ function useCollections() {
       imageCount: images.length,
       directoryHandle,
       persisted: false,
+      trainSplitPercent: DEFAULT_TRAIN_SPLIT_PERCENT,
+      valSplitPercent: 100 - DEFAULT_TRAIN_SPLIT_PERCENT,
     };
 
     setCollections((prev) => [newCollection, ...prev]);

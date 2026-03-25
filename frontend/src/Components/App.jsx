@@ -20,6 +20,7 @@ function App() {
     addCollection,
     getCollection,
     removeCollection,
+    updateCollection,
     syncCollection,
   } = useCollections();
   const [currentCollectionId, setCurrentCollectionId] = useState(null);
@@ -139,6 +140,7 @@ function App() {
             collection={currentCollection}
             versions={versions}
             currentVersionId={currentVersionId}
+            onCollectionUpdate={updateCollection}
           />
         );
       case "augmentation":
