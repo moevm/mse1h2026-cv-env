@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 
 import Sidebar from "./Layout/Sidebar";
 import Navbar from "./Layout/Navbar";
@@ -14,8 +14,14 @@ import useCollections from "../hooks/useCollections";
 import "../styles/App.css";
 
 function App() {
-  const { collections, addCollection, getCollection, removeCollection, syncCollection } =
-    useCollections();
+  const {
+    collections,
+    isLoadingCollections,
+    addCollection,
+    getCollection,
+    removeCollection,
+    syncCollection,
+  } = useCollections();
   const [currentCollectionId, setCurrentCollectionId] = useState(null);
   const [currentTab, setCurrentTab] = useState("dataset");
   const [showUploader, setShowUploader] = useState(false);
@@ -23,11 +29,23 @@ function App() {
   const versions = [];
   const currentVersionId = null;
 
-  const currentCollection = currentCollectionId
-    ? getCollection(currentCollectionId)
-    : null;
+  useEffect(() => {
+    if (!collections.length) {
+      setCurrentCollectionId(null);
+      return;
+    }
 
-  // functions for sidebar
+    const hasCurrentCollection = collections.some(
+      (collection) => collection.id === currentCollectionId,
+    );
+
+    if (!hasCurrentCollection) {
+      setCurrentCollectionId(collections[0].id);
+    }
+  }, [collections, currentCollectionId]);
+
+  const currentCollection = currentCollectionId ? getCollection(currentCollectionId) : null;
+
   function handleCollectionClick(collectionId) {
     setCurrentCollectionId(collectionId);
   }
@@ -38,7 +56,6 @@ function App() {
 
   function handleDeleteCollection() {}
 
-  // functions for file uploader
   async function handleFolderUpload(files, collectionName, directoryHandle) {
     const collectionId = addCollection(files, collectionName, directoryHandle);
     setCurrentCollectionId(collectionId);
@@ -49,34 +66,35 @@ function App() {
     setShowUploader(false);
   }
 
-  // functions for version control - to be done
   function handleCreateVersion() {}
 
   function handleSelectVersion() {}
 
   function handleUpdateSplit() {}
 
-  // sync function
   async function handleSyncCollection(collectionId) {
     try {
       await syncCollection(collectionId);
     } catch (err) {
       console.error("Sync failed:", err);
-      // optionally show error message to user
     }
   }
 
-  // rendering main content
   function renderTabContent() {
+    if (isLoadingCollections) {
+      return (
+        <div className="empty-state">
+          <h2>Загрузка проектов...</h2>
+        </div>
+      );
+    }
+
     if (!currentCollection) {
       return (
         <div className="empty-state">
           <h2>Добро пожаловать в Image Labeling Platform</h2>
           <p>Выберите проект слева или создайте новый</p>
-          <button
-            className="add-collection-button"
-            onClick={handleAddCollection}
-          >
+          <button className="add-collection-button" onClick={handleAddCollection}>
             + Создать проект
           </button>
         </div>
@@ -97,7 +115,7 @@ function App() {
             onSync={handleSyncCollection}
           />
         );
-      case "annotation": // pass same props to all components
+      case "annotation":
         return (
           <AnnotationView
             key={currentCollectionId}
@@ -123,7 +141,7 @@ function App() {
             currentVersionId={currentVersionId}
           />
         );
-      case "experiments": // idk what to pass to this one - will find out later
+      case "experiments":
         return <ExperimentsView />;
       default:
         return null;
@@ -147,10 +165,7 @@ function App() {
           {showUploader ? (
             <div className="uploader-container">
               <h2>Новая коллекция</h2>
-              <FolderUploader
-                onFolderUpload={handleFolderUpload}
-                onCancel={handleCancelUpload}
-              />
+              <FolderUploader onFolderUpload={handleFolderUpload} onCancel={handleCancelUpload} />
             </div>
           ) : (
             renderTabContent()
