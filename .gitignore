@@ -1,8 +1,11 @@
 frontend/node_modules
+storage
+yolo*
 __pycache__/
 venv
 *.pyc
 *.pyo
 *.pyd
+.env
 .aider*
 storage/

@@ -46,9 +46,9 @@ def _normalize_relative_path(relative_path: str | None, fallback_name: str) -> s
     return str(PurePosixPath(*sanitized_parts))
 
 
-def _build_dataset_yaml(classes: list[str]) -> dict[str, Any]:
+def _build_dataset_yaml(classes: list[str], dataset_abs_path: str) -> dict[str, Any]:
     return {
-        "path": ".",
+        "path": dataset_abs_path,
         "train": "train/images",
         "val": "val/images",
         "test": None,
@@ -56,8 +56,8 @@ def _build_dataset_yaml(classes: list[str]) -> dict[str, Any]:
     }
 
 
-def _write_dataset_yaml(file_path: str, classes: list[str]) -> None:
-    dataset_yaml = _build_dataset_yaml(classes)
+def _write_dataset_yaml(file_path: str, classes: list[str], dataset_abs_path: str) -> None:
+    dataset_yaml = _build_dataset_yaml(classes, dataset_abs_path)
     yaml_content = yaml.safe_dump(dataset_yaml, allow_unicode=True, sort_keys=False)
     yaml_content = yaml_content.replace("test: null", "test:")
 
@@ -257,6 +257,25 @@ def delete_dataset(dataset_name: str):
     return {"status": "success", "dataset_name": safe_dataset_name}
 
 
+@router.get("/{dataset_name}/yaml-path")
+def get_config(dataset_name: str):
+    safe_dataset_name = _sanitize_dataset_name(dataset_name)
+    dataset_dir = os.path.join(DATASETS_DIR, safe_dataset_name)
+    
+    if not os.path.isdir(dataset_dir):
+        raise HTTPException(status_code=404, detail="Датасет не найден")
+    
+    yaml_path = os.path.join(dataset_dir, "dataset.yaml")
+    
+    if not os.path.isfile(yaml_path):
+        raise HTTPException(status_code=404, detail="Файл dataset.yaml не найден")
+    
+    return {
+        "dataset_name": safe_dataset_name,
+        "yaml_path": yaml_path,
+        "exists": True
+    }
+
 @router.get("/{dataset_name}/files/{file_path:path}")
 def get_dataset_file(dataset_name: str, file_path: str):
     file_path = _resolve_dataset_subpath(dataset_name, "", file_path)
@@ -290,6 +309,7 @@ async def export_dataset(
 
     dataset_name = _sanitize_dataset_name(collection_name)
     dataset_dir = os.path.join(DATASETS_DIR, dataset_name)
+    dataset_abs_path = os.path.abspath(dataset_dir)
 
     if os.path.isdir(dataset_dir):
         shutil.rmtree(dataset_dir)
@@ -343,6 +363,7 @@ async def export_dataset(
         _write_dataset_yaml(
             os.path.join(dataset_dir, "dataset.yaml"),
             classes,
+            dataset_abs_path,
         )
 
         with open(os.path.join(dataset_dir, "classes.txt"), "w", encoding="utf-8") as classes_file:
@@ -354,6 +375,7 @@ async def export_dataset(
             "status": "success",
             "dataset_name": dataset_name,
             "dataset_path": dataset_dir,
+            "dataset_abs_path": dataset_abs_path,
             "dataset_yaml_path": os.path.join(dataset_dir, "dataset.yaml"),
             "images_saved": images_saved,
             "classes_saved": len(classes),

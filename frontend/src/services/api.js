@@ -104,6 +104,13 @@ export const stopTraining = async (taskId) => {
   return await res.json();
 };
 
+export const getTrainingLogs = async (taskId, limit = 100) => {
+  const res = await fetch(`${API_BASE_URL}/api/training/logs/${taskId}?limit=${limit}`);
+  if (!res.ok) {
+    throw new Error("Ошибка получения логов обучения");
+  }
+  return await res.json();
+};
 export const getStoredDatasets = async () => {
   const res = await fetch(`${API_BASE_URL}/api/datasets`);
   if (!res.ok) {
@@ -114,6 +121,7 @@ export const getStoredDatasets = async () => {
   return await res.json();
 };
 
+// Dataset
 export const exportDataset = async ({ collectionName, classes, items, trainPercent }) => {
   const formData = new FormData();
   formData.append("collection_name", collectionName);
@@ -148,7 +156,6 @@ export const exportDataset = async ({ collectionName, classes, items, trainPerce
   return await res.json();
 };
 
-
 export const deleteStoredDataset = async (datasetName) => {
   const res = await fetch(`${API_BASE_URL}/api/datasets/${encodeURIComponent(datasetName)}`, {
     method: "DELETE",
@@ -159,5 +166,14 @@ export const deleteStoredDataset = async (datasetName) => {
     throw new Error(error.detail || "Ошибка удаления коллекции");
   }
 
+  return await res.json();
+};
+
+export const getDataset = async (datasetName) => {
+  const res = await fetch(`${API_BASE_URL}/api/datasets/${encodeURIComponent(datasetName)}/yaml-path`);
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.detail || "Ошибка получения пути к dataset.yaml");
+  }
   return await res.json();
 };
