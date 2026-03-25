@@ -14,7 +14,7 @@ function ImageViewer({
 }) {
   const [currentUrl, setCurrentUrl] = useState(null);
   const [txtAnnotations, setTxtAnnotations] = useState([]);
-  const urlsRef = useRef([]); // храним все созданные URL
+  const urlsRef = useRef([]);
 
   useEffect(() => {
     if (!image) return;
@@ -48,11 +48,9 @@ function ImageViewer({
 
         if (!isActive) return;
 
-        setTxtAnnotations(
-          parseTxtAnnotations(txtContent, imageSize.width, imageSize.height),
-        );
+        setTxtAnnotations(parseTxtAnnotations(txtContent, imageSize.width, imageSize.height));
       } catch (error) {
-        console.error('Не удалось прочитать txt-разметку:', error);
+        console.error("Не удалось прочитать txt-разметку:", error);
         if (isActive) {
           setTxtAnnotations([]);
         }
@@ -66,7 +64,6 @@ function ImageViewer({
     };
   }, [image]);
 
-  // При размонтировании отзываем все созданные URL
   useEffect(() => {
     return () => {
       urlsRef.current.forEach((url) => URL.revokeObjectURL(url));
@@ -93,6 +90,7 @@ function ImageViewer({
         </div>
         <ImageAnnotator
           imageUrl={currentUrl}
+          imageId={image.relativePath}
           imageName={image.name}
           externalAnnotations={txtAnnotations}
           onClose={onClose}
