@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any, List
+from typing import Optional, List
 from datetime import datetime
+from schemas.augmentation_schema import AugmentationSchema
 
 class TrainingParamsSchema(BaseModel):
     model: str = Field("yolov8n", description="Базовая модель")
@@ -28,11 +29,10 @@ class DatasetInfoSchema(BaseModel):
     name: str
     versionId: str
     versionName: str
-    imageCount: int
-    images: List[str] = []
+    yaml_path: str
 
 class TrainingRequestSchema(TrainingParamsSchema):
-    augmentations: Dict[str, Any] = {}
+    augmentations: AugmentationSchema
     dataset: DatasetInfoSchema
     timestamp: datetime = Field(default_factory=datetime.now)
 
