@@ -5,7 +5,7 @@ import AnnotationPopup from "./AnnotationPopup";
 import { isPointInRect, isPointInPolygon } from "../../utils/canvasUtils";
 import "../../styles/AnnotationView.css";
 
-function ImageAnnotator({ imageUrl, imageName, externalAnnotations = [], onClose, annotationsManager }) {
+function ImageAnnotator({ imageUrl, imageId, imageName, externalAnnotations = [], onClose, annotationsManager }) {
   const {
     annotations,
     classes,
@@ -30,10 +30,7 @@ function ImageAnnotator({ imageUrl, imageName, externalAnnotations = [], onClose
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
 
-  const currentImageAnnotations = annotations.filter(
-    (a) => a.imageId === imageName,
-  );
-
+  const currentImageAnnotations = annotations.filter((a) => a.imageId === imageId);
   const displayedAnnotations = [...externalAnnotations, ...currentImageAnnotations];
 
   const findAnnotationAtPoint = useCallback(
@@ -42,10 +39,7 @@ function ImageAnnotator({ imageUrl, imageName, externalAnnotations = [], onClose
         const ann = currentImageAnnotations[i];
         if (ann.type === "rectangle" && isPointInRect(point, ann)) {
           return ann;
-        } else if (
-          ann.type === "polygon" &&
-          isPointInPolygon(point, ann.points)
-        ) {
+        } else if (ann.type === "polygon" && isPointInPolygon(point, ann.points)) {
           return ann;
         }
       }
@@ -139,7 +133,7 @@ function ImageAnnotator({ imageUrl, imageName, externalAnnotations = [], onClose
           setSelectedAnnotation({
             type: "rectangle",
             ...currentRect,
-            imageId: imageName,
+            imageId,
           });
           setShowPopup(true);
         }
@@ -148,7 +142,7 @@ function ImageAnnotator({ imageUrl, imageName, externalAnnotations = [], onClose
       }
       setIsDragging(false);
     },
-    [isDrawing, currentTool, currentRect, imageName],
+    [isDrawing, currentTool, currentRect, imageId],
   );
 
   const handleClick = useCallback(
@@ -160,16 +154,13 @@ function ImageAnnotator({ imageUrl, imageName, externalAnnotations = [], onClose
 
           if (newPolygon.length >= 3) {
             const firstPoint = newPolygon[0];
-            const distance = Math.hypot(
-              coords.x - firstPoint.x,
-              coords.y - firstPoint.y,
-            );
+            const distance = Math.hypot(coords.x - firstPoint.x, coords.y - firstPoint.y);
             if (distance < 15) {
               setPopupPosition({ x: e.clientX, y: e.clientY });
               setSelectedAnnotation({
                 type: "polygon",
                 points: newPolygon,
-                imageId: imageName,
+                imageId,
               });
               setShowPopup(true);
               setCurrentPolygon([]);
@@ -181,7 +172,7 @@ function ImageAnnotator({ imageUrl, imageName, externalAnnotations = [], onClose
         setSelectedForEdit(annotation || null);
       }
     },
-    [currentTool, currentPolygon, findAnnotationAtPoint, imageName],
+    [currentTool, currentPolygon, findAnnotationAtPoint, imageId],
   );
 
   const handleDoubleClick = useCallback(
@@ -245,14 +236,12 @@ function ImageAnnotator({ imageUrl, imageName, externalAnnotations = [], onClose
   }, []);
 
   const handleZoomIn = useCallback(() => {
-    setZoom((prev) => Math.min(prev + 0.1, 3)); // max 300%
+    setZoom((prev) => Math.min(prev + 0.1, 3));
   }, []);
 
   const handleZoomOut = useCallback(() => {
-    setZoom((prev) => Math.max(prev - 0.1, 0.5)); // min 50%
+    setZoom((prev) => Math.max(prev - 0.1, 0.5));
   }, []);
-
-  const canvasImage = { url: imageUrl };
 
   return (
     <div className="image-annotator">
