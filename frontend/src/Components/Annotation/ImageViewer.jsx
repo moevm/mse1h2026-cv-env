@@ -20,13 +20,15 @@ function ImageViewer({
     if (!image) return;
 
     let isActive = true;
-    const file = image.file;
-    const newUrl = URL.createObjectURL(file);
-    urlsRef.current.push(newUrl);
+    const newUrl = image.url || URL.createObjectURL(image.file);
+    if (!image.url) {
+      urlsRef.current.push(newUrl);
+    }
     setCurrentUrl(newUrl);
 
     const loadTxtAnnotations = async () => {
-      if (!image.annotationFile) {
+      const hasInlineText = typeof image.annotationText === "string" && image.annotationText.length > 0;
+      if (!hasInlineText && !image.annotationFile) {
         if (isActive) {
           setTxtAnnotations([]);
         }
@@ -34,17 +36,17 @@ function ImageViewer({
       }
 
       try {
-        const [txtContent, imageSize] = await Promise.all([
-          image.annotationFile.text(),
-          new Promise((resolve, reject) => {
-            const previewImage = new Image();
-            previewImage.onload = () => {
-              resolve({ width: previewImage.naturalWidth, height: previewImage.naturalHeight });
-            };
-            previewImage.onerror = reject;
-            previewImage.src = newUrl;
-          }),
-        ]);
+        const txtPromise = hasInlineText ? Promise.resolve(image.annotationText) : image.annotationFile.text();
+        const sizePromise = new Promise((resolve, reject) => {
+          const previewImage = new Image();
+          previewImage.onload = () => {
+            resolve({ width: previewImage.naturalWidth, height: previewImage.naturalHeight });
+          };
+          previewImage.onerror = reject;
+          previewImage.src = newUrl;
+        });
+
+        const [txtContent, imageSize] = await Promise.all([txtPromise, sizePromise]);
 
         if (!isActive) return;
 

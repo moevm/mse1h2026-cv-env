@@ -8,22 +8,50 @@ import { annotationToYoloLine } from "../../utils/yolo";
 
 import "../../styles/AnnotationView.css";
 
-function getImageSize(file) {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const image = new Image();
+const DEFAULT_TRAIN_SPLIT_PERCENT = 80;
 
-    image.onload = () => {
-      resolve({ width: image.naturalWidth, height: image.naturalHeight });
-      URL.revokeObjectURL(url);
+function getImageSize(image) {
+  return new Promise((resolve, reject) => {
+    const sourceUrl = image.url || URL.createObjectURL(image.file);
+    const shouldRevoke = !image.url;
+    const previewImage = new Image();
+
+    previewImage.onload = () => {
+      resolve({ width: previewImage.naturalWidth, height: previewImage.naturalHeight });
+      if (shouldRevoke) {
+        URL.revokeObjectURL(sourceUrl);
+      }
     };
 
-    image.onerror = (error) => {
-      URL.revokeObjectURL(url);
+    previewImage.onerror = (error) => {
+      if (shouldRevoke) {
+        URL.revokeObjectURL(sourceUrl);
+      }
       reject(error);
     };
 
-    image.src = url;
+    previewImage.src = sourceUrl;
+  });
+}
+
+async function ensureImageFile(image) {
+  if (image.file instanceof File) {
+    return image.file;
+  }
+
+  if (!image.url) {
+    throw new Error(`Не найден источник изображения ${image.name}`);
+  }
+
+  const response = await fetch(image.url);
+  if (!response.ok) {
+    throw new Error(`Не удалось загрузить изображение ${image.name}`);
+  }
+
+  const blob = await response.blob();
+  return new File([blob], image.name, {
+    type: blob.type || image.type || "application/octet-stream",
+    lastModified: Date.now(),
   });
 }
 
@@ -40,7 +68,25 @@ function parseClassIdsFromTxt(txtContent) {
     .filter((value) => Number.isInteger(value) && value >= 0);
 }
 
-function AnnotationView({ collection, versions, currentVersionId }) {
+function getSplitPreview(images, trainPercent) {
+  const imageCount = images.length;
+  if (imageCount === 0) {
+    return { trainCount: 0, valCount: 0 };
+  }
+
+  if (imageCount === 1) {
+    return { trainCount: 1, valCount: 0 };
+  }
+
+  const rawTrainCount = Math.round(imageCount * (trainPercent / 100));
+  const trainCount = Math.max(1, Math.min(imageCount - 1, rawTrainCount));
+  return {
+    trainCount,
+    valCount: imageCount - trainCount,
+  };
+}
+
+function AnnotationView({ collection, versions, currentVersionId, onCollectionUpdate }) {
   const [currentImage, setCurrentImage] = useState(null);
   const [showViewer, setShowViewer] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -60,8 +106,16 @@ function AnnotationView({ collection, versions, currentVersionId }) {
     ...image,
     isMarked:
       Boolean(image.annotationFile) ||
+      Boolean(image.annotationText) ||
       annotationsManager.getAnnotationsByImage(image.relativePath).length > 0,
   }));
+
+  const trainSplitPercent = collection?.trainSplitPercent ?? DEFAULT_TRAIN_SPLIT_PERCENT;
+  const valSplitPercent = 100 - trainSplitPercent;
+  const { trainCount, valCount } = useMemo(
+    () => getSplitPreview(images, trainSplitPercent),
+    [images, trainSplitPercent],
+  );
 
   const classesById = useMemo(
     () => new Map(annotationsManager.classes.map((item, index) => [item.id, index])),
@@ -81,8 +135,10 @@ function AnnotationView({ collection, versions, currentVersionId }) {
       const allUsedClassIds = new Set();
 
       for (const image of images) {
-        const { width, height } = await getImageSize(image.file);
-        const existingTxt = image.annotationFile ? await image.annotationFile.text() : "";
+        const [size, imageFile] = await Promise.all([getImageSize(image), ensureImageFile(image)]);
+        const existingTxt = image.annotationFile
+          ? await image.annotationFile.text()
+          : image.annotationText || "";
         const drawnAnnotations = annotationsManager.getAnnotationsByImage(image.relativePath);
 
         const drawnLines = drawnAnnotations
@@ -91,7 +147,7 @@ function AnnotationView({ collection, versions, currentVersionId }) {
             if (classIndex != null) {
               allUsedClassIds.add(classIndex);
             }
-            return annotationToYoloLine(annotation, classIndex, width, height);
+            return annotationToYoloLine(annotation, classIndex, size.width, size.height);
           })
           .filter(Boolean);
 
@@ -108,7 +164,7 @@ function AnnotationView({ collection, versions, currentVersionId }) {
         ].join("\n");
 
         items.push({
-          file: image.file,
+          file: imageFile,
           relativePath: image.relativePath,
           annotationTxt: mergedLines,
         });
@@ -125,15 +181,34 @@ function AnnotationView({ collection, versions, currentVersionId }) {
         collectionName: collection.name,
         classes: classNames,
         items,
+        trainPercent: trainSplitPercent,
       });
 
-      setSaveMessage(`Датасет сохранён: ${response.dataset_path}`);
+      onCollectionUpdate?.(collection.id, {
+        persisted: true,
+        datasetName: response.dataset_name,
+        datasetYamlPath: response.dataset_yaml_path,
+        trainSplitPercent: response.train_percent,
+        valSplitPercent: response.val_percent,
+      });
+
+      setSaveMessage(
+        `Датасет сохранён: ${response.dataset_path}. Train: ${response.split_counts.train}, Val: ${response.split_counts.val}`,
+      );
     } catch (error) {
       console.error(error);
       setSaveMessage(`Ошибка сохранения: ${error.message}`);
     } finally {
       setIsSaving(false);
     }
+  }
+
+  function handleTrainSplitChange(event) {
+    const nextTrainPercent = Number(event.target.value);
+    onCollectionUpdate?.(collection.id, {
+      trainSplitPercent: nextTrainPercent,
+      valSplitPercent: 100 - nextTrainPercent,
+    });
   }
 
   function handleImageClick(image) {
@@ -201,6 +276,35 @@ function AnnotationView({ collection, versions, currentVersionId }) {
           >
             {isSaving ? "Сохранение..." : "Сохранить bbox в datasets"}
           </button>
+        </div>
+      </div>
+
+      <div className="annotation-split-card">
+        <div className="annotation-split-header">
+          <div>
+            <h3>Train / Val split</h3>
+            <p>
+              Этот параметр используется при экспорте датасета и попадает в структуру,
+              совместимую с YOLO.
+            </p>
+          </div>
+          <div className="annotation-split-percentages">
+            <span>Train: {trainSplitPercent}%</span>
+            <span>Val: {valSplitPercent}%</span>
+          </div>
+        </div>
+        <input
+          className="split-slider"
+          type="range"
+          min="50"
+          max="95"
+          step="5"
+          value={trainSplitPercent}
+          onChange={handleTrainSplitChange}
+        />
+        <div className="annotation-split-summary">
+          <span>В train попадёт: {trainCount}</span>
+          <span>В val попадёт: {valCount}</span>
         </div>
       </div>
 

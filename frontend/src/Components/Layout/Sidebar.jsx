@@ -35,6 +35,17 @@ function Sidebar({
               <span className="collection-icon">📁</span>
               <span className="collection-name">{collection.name}</span>
               <span className="collection-count">{collection.imageCount}</span>
+              <button
+                type="button"
+                className="collection-delete-btn"
+                title={`Удалить ${collection.name}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onDeleteCollection(collection.id);
+                }}
+              >
+                🗑
+              </button>
             </div>
           ))
         )}
