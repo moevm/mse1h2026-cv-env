@@ -85,3 +85,77 @@
 .tab-label {
   line-height: 60px;
 }
+
+
+.sidebar {
+  width: 280px;
+}
+
+.sidebar-header {
+  padding: 20px 16px 12px;
+}
+
+.sidebar-actions {
+  padding: 0 16px 12px;
+}
+
+.collections-list {
+  padding: 0 8px 16px;
+}
+
+.collection-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.collection-item:hover {
+  background: rgba(52, 152, 219, 0.08);
+}
+
+.collection-item.active {
+  background: rgba(52, 152, 219, 0.14);
+}
+
+.collection-icon {
+  flex-shrink: 0;
+}
+
+.collection-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collection-count {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: #7f8c8d;
+}
+
+.collection-delete-btn {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  padding: 4px;
+  line-height: 1;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.collection-item:hover .collection-delete-btn,
+.collection-item.active .collection-delete-btn {
+  opacity: 1;
+}
+
+.collection-delete-btn:hover {
+  background: rgba(231, 76, 60, 0.12);
+  transform: scale(1.05);
+}

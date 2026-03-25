@@ -42,7 +42,9 @@ function TrainingView({ collection, currentVersionId }) {
   
   const statusIntervals = useRef({});
 
-  const currentVersion = collection?.versions?.find(v => v.id === currentVersionId);
+  const currentVersion = collection?.versions?.find(v => v.id === currentVersionId) || null;
+  const datasetImages = currentVersion?.images || collection?.images || [];
+  const datasetVersionName = currentVersion?.name || "Основная версия";
   
   useEffect(() => {
     loadConfigs();
@@ -167,7 +169,6 @@ function TrainingView({ collection, currentVersionId }) {
       const data = await validateModel(modelName);
       
       if (data.valid) {
-        setModelError("");
         addLog(`Модель "${modelName}" найдена`, "success");
         return true;
       } else {
@@ -211,9 +212,13 @@ function TrainingView({ collection, currentVersionId }) {
         id: collection.id,
         name: collection.name,
         versionId: currentVersionId,
-        versionName: currentVersion.name || `Version ${currentVersionId}`,
-        imageCount: currentVersion.images.length,
-        images: currentVersion.images.map(img => img.path || img.name)
+        versionName: datasetVersionName,
+        imageCount: datasetImages.length,
+        images: datasetImages.map(img => img.path || img.relativePath || img.name),
+        datasetName: collection.datasetName || null,
+        datasetYamlPath: collection.datasetYamlPath || null,
+        trainSplitPercent: collection.trainSplitPercent ?? null,
+        valSplitPercent: collection.valSplitPercent ?? null
       },
       
       modelName: params.modelName.trim() || undefined,
@@ -233,7 +238,7 @@ function TrainingView({ collection, currentVersionId }) {
         taskId: response.task_id,
         modelIdentifier: modelIdentifier,
         datasetName: collection.name,
-        versionName: currentVersion.name || `Version ${currentVersionId}`,
+        versionName: datasetVersionName,
         model: params.model,
         status: 'running',
         progress: 0,
