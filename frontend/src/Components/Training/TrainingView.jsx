@@ -9,7 +9,6 @@ import {
   getAugmentations,
   getTrainingLogs
 } from "../../services/api";
-import { useWebSocket } from "../../hooks/useWebSocket"
 import "../../styles/TrainingView.css";
 
 function TrainingView({ collection, currentVersionId }) {
@@ -17,9 +16,8 @@ function TrainingView({ collection, currentVersionId }) {
   const [activeTrainings, setActiveTrainings] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
-
-  const [selectedTaskId, setSelectedTaskId] = useState(null);
-  const { status: wsStatus, isConnected: wsConnected } = useWebSocket(selectedTaskId);
+  const completedTasksRef = useRef(new Set());
+  const websocketsRef = useRef({});
   
   const [params, setParams] = useState({
     model: "yolov8n",
@@ -45,54 +43,119 @@ function TrainingView({ collection, currentVersionId }) {
 
   const [augmentationParams, setAugmentationParams] = useState(null);
   
-  const statusIntervals = useRef({});
-
   const currentVersion = collection?.versions?.find(v => v.id === currentVersionId);
+
+  const addLog = useCallback((message, type = "info") => {
+    const timestamp = new Date().toLocaleTimeString();
+    setConsoleLogs(prev => [...prev, { 
+      id: Date.now() + Math.random(), 
+      timestamp, 
+      message, 
+      type 
+    }]);
+  }, []);
+
+  const createWebSocket = useCallback((taskId, taskInfo) => {
+    if (websocketsRef.current[taskId]) {
+      return;
+    }
+    
+    console.log(`[WS] Creating connection for task ${taskId}`);
+    const ws = new WebSocket(`ws://localhost:8000/api/training/ws/${taskId}`);
+    
+    ws.onopen = () => {
+      console.log(`[WS] Connected for task ${taskId}`);
+    };
+    
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        console.log(`[WS] Status for ${taskId}: epoch=${data.current_epoch}, progress=${data.progress}%, status=${data.status}`);
+        
+        setActiveTrainings(prev => prev.map(task => 
+          task.taskId === taskId 
+            ? { 
+                ...task, 
+                status: data.status,
+                progress: Math.round(data.progress || 0),
+                currentEpoch: data.current_epoch,
+                totalEpochs: data.total_epochs,
+                loss: data.loss,
+                lastUpdate: new Date() 
+              }
+            : task
+        ));
+        
+        if (data.status === 'completed') {
+          addLog(`Обучение "${taskInfo.modelIdentifier}" успешно завершено`, "success");
+          completedTasksRef.current.add(taskId);
+          
+          if (websocketsRef.current[taskId]) {
+            websocketsRef.current[taskId].close();
+            delete websocketsRef.current[taskId];
+          }
+          
+          setTimeout(() => {
+            setActiveTrainings(prev => prev.filter(task => task.taskId !== taskId));
+          }, 5000);
+        }
+        
+        if (data.status === 'failed') {
+          addLog(`Обучение "${taskInfo.modelIdentifier}" не завершено: ${data.error || 'неизвестная ошибка'}`, "error");
+          completedTasksRef.current.add(taskId);
+          
+          if (websocketsRef.current[taskId]) {
+            websocketsRef.current[taskId].close();
+            delete websocketsRef.current[taskId];
+          }
+          
+          setTimeout(() => {
+            setActiveTrainings(prev => prev.filter(task => task.taskId !== taskId));
+          }, 10000);
+        }
+        
+        if (data.status === 'stopped') {
+          addLog(`Обучение "${taskInfo.modelIdentifier}" остановлено`, "warning");
+          completedTasksRef.current.add(taskId);
+          
+          if (websocketsRef.current[taskId]) {
+            websocketsRef.current[taskId].close();
+            delete websocketsRef.current[taskId];
+          }
+          
+          setTimeout(() => {
+            setActiveTrainings(prev => prev.filter(task => task.taskId !== taskId));
+          }, 5000);
+        }
+      } catch (error) {
+        console.error('Error parsing WebSocket message:', error);
+      }
+    };
+    
+    ws.onerror = (error) => {
+      console.error(`[WS] Error for task ${taskId}:`, error);
+    };
+    
+    ws.onclose = (event) => {
+      console.log(`[WS] Closed for task ${taskId}, code=${event.code}`);
+      if (websocketsRef.current[taskId]) {
+        delete websocketsRef.current[taskId];
+      }
+    };
+    
+    websocketsRef.current[taskId] = ws;
+  }, [addLog]);
   
   useEffect(() => {
-    if (wsStatus && selectedTaskId) {
-      setActiveTrainings(prev => prev.map(task => 
-        task.taskId === selectedTaskId 
-          ? { 
-              ...task, 
-              status: wsStatus.status,
-              progress: wsStatus.progress || 0,
-              currentEpoch: wsStatus.current_epoch,
-              totalEpochs: wsStatus.total_epochs,
-              loss: wsStatus.loss,
-              lastUpdate: new Date() 
-            }
-          : task
-      ));
-      
-      if (wsStatus.status === 'completed') {
-        addLog(`Обучение "${selectedTaskId}" успешно завершено`, "success");
-        
-        setTimeout(() => {
-          setSelectedTaskId(null);
-          setActiveTrainings(prev => prev.filter(task => task.taskId !== selectedTaskId));
-        }, 5000);
-      }
-      
-      if (wsStatus.status === 'failed') {
-        addLog(`Обучение "${selectedTaskId}" не завершено: ${wsStatus.error || 'неизвестная ошибка'}`, "error");
-        
-        setTimeout(() => {
-          setSelectedTaskId(null);
-          setActiveTrainings(prev => prev.filter(task => task.taskId !== selectedTaskId));
-        }, 10000);
-      }
-      
-      if (wsStatus.status === 'stopped') {
-        addLog(`Обучение "${selectedTaskId}" остановлено`, "warning");
-        
-        setTimeout(() => {
-          setSelectedTaskId(null);
-          setActiveTrainings(prev => prev.filter(task => task.taskId !== selectedTaskId));
-        }, 5000);
-      }
-    }
-  }, [wsStatus, selectedTaskId]);
+    return () => {
+      Object.values(websocketsRef.current).forEach(ws => {
+        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+          ws.close();
+        }
+      });
+      websocketsRef.current = {};
+    };
+  }, []);
 
   useEffect(() => {
     loadConfigs();
@@ -101,7 +164,11 @@ function TrainingView({ collection, currentVersionId }) {
   const loadConfigs = async () => {
     try {
       const trainingConfig = await getTrainingConfig();
-      setParams(prev => ({ ...prev, ...trainingConfig }));
+      setParams(prev => ({ 
+        ...prev, 
+        ...trainingConfig,
+        modelName: trainingConfig.modelName || ""
+      }));
       addLog("Конфигурация обучения загружена", "success");
     } catch (error) {
       addLog(`Ошибка загрузки конфигурации обучения: ${error.message}, используются значения по умолчанию`, "warning");
@@ -116,31 +183,8 @@ function TrainingView({ collection, currentVersionId }) {
     }
   };
 
-  const addLog = (message, type = "info") => {
-    const timestamp = new Date().toLocaleTimeString();
-    setConsoleLogs(prev => [...prev, { 
-      id: Date.now() + Math.random(), 
-      timestamp, 
-      message, 
-      type 
-    }]);
-  };
-
   const clearLogs = () => {
     setConsoleLogs([]);
-  };
-
-  const loadTrainingLogs = async (taskId) => {
-    try {
-      const response = await getTrainingLogs(taskId, 50);
-      if (response.logs && response.logs.length > 0) {
-        response.logs.forEach(log => {
-          addLog(log, "info");
-        });
-      }
-    } catch (error) {
-      console.error("Error loading logs:", error);
-    }
   };
 
   const handleStopTraining = async (taskId, modelIdentifier) => {
@@ -148,9 +192,11 @@ function TrainingView({ collection, currentVersionId }) {
       await stopTraining(taskId);
       addLog(`Обучение "${modelIdentifier}" остановлено пользователем`, "info");
       
-      if (statusIntervals.current[taskId]) {
-        clearInterval(statusIntervals.current[taskId]);
-        delete statusIntervals.current[taskId];
+      completedTasksRef.current.add(taskId);
+      
+      if (websocketsRef.current[taskId]) {
+        websocketsRef.current[taskId].close();
+        delete websocketsRef.current[taskId];
       }
       
       setActiveTrainings(prev => prev.filter(task => task.taskId !== taskId));
@@ -213,56 +259,56 @@ function TrainingView({ collection, currentVersionId }) {
     const isValid = await validateModelAPI(params.model);
     if (!isValid) return;
 
+    const { modelName, ...paramsWithoutModelName } = params;
+
     const trainingData = {
-      ...params,
-      
+      ...paramsWithoutModelName,
       augmentations: augmentationParams || {},
-      
       dataset: {
         id: collection.id,
         name: collection.name,
-        versionId: currentVersionId,
-        versionName: currentVersion.name || `Version ${currentVersionId}`,
-        imageCount: currentVersion.images.length,
-        images: currentVersion.images.map(img => img.path || img.name)
+        versionId: currentVersionId || "",
+        versionName: currentVersion?.name || `Version ${currentVersionId || "unknown"}`,
+        yaml_path: "coco8.yaml"
       },
-      
-      modelName: params.modelName.trim() || undefined,
-      
+      modelName: params.modelName && typeof params.modelName === 'string' 
+        ? params.modelName
+        : "",
       timestamp: new Date().toISOString(),
     };
 
     try {
       setIsLoading(true);
-      
+
       await saveTrainingConfig(trainingData);
-      
+
       const response = await startTraining(trainingData);
-      
+      const taskId = response.task_id;
+
       const modelIdentifier = params.modelName.trim() || params.model;
       const taskInfo = {
-        taskId: response.task_id,
+        taskId: taskId,
         modelIdentifier: modelIdentifier,
         datasetName: collection.name,
-        versionName: currentVersion.name || `Version ${currentVersionId}`,
+        versionName: currentVersion?.name || `Version ${currentVersionId || "unknown"}`,
         model: params.model,
-        status: 'running',
+        status: 'pending',
         progress: 0,
         currentEpoch: 0,
         totalEpochs: params.epochs,
         startedAt: new Date(),
         lastUpdate: new Date()
       };
-      
+
       setActiveTrainings(prev => [...prev, taskInfo]);
       
+      createWebSocket(taskId, taskInfo);
+
       addLog(`Запущено обучение "${modelIdentifier}"`, "success");
-      addLog(`Task ID: ${response.task_id}`, "info");
-      
-      setSelectedTaskId(response.task_id);
-      
-      alert(`Обучение успешно запущено\nTask ID: ${response.task_id}`);
-      
+      addLog(`Task ID: ${taskId}`, "info");
+
+      alert(`Обучение успешно запущено\nTask ID: ${taskId}`);
+
     } catch (error) {
       addLog(`Ошибка запуска обучения: ${error.message}`, "error");
       alert(`Ошибка запуска обучения: ${error.message}`);
@@ -270,12 +316,6 @@ function TrainingView({ collection, currentVersionId }) {
       setIsLoading(false);
     }
   };
-
-  useEffect(() => {
-    return () => {
-      Object.values(statusIntervals.current).forEach(interval => clearInterval(interval));
-    };
-  }, []);
 
   return (
     <div className="training-view">
@@ -493,7 +533,7 @@ function TrainingView({ collection, currentVersionId }) {
       </div>
       
       <div className="active-trainings-section">
-        <h3>Активные процессы обучения</h3>
+        <h3>Активные процессы обучения ({activeTrainings.length})</h3>
         {activeTrainings.length === 0 ? (
           <div className="no-active-trainings">
             Нет активных процессов обучения
@@ -526,7 +566,8 @@ function TrainingView({ collection, currentVersionId }) {
                     <span className={`status-badge status-${training.status}`}>
                       {training.status === 'running' ? 'Выполняется' : 
                        training.status === 'completed' ? 'Завершено' : 
-                       training.status === 'failed' ? 'Ошибка' : training.status}
+                       training.status === 'failed' ? 'Ошибка' : 
+                       training.status === 'stopped' ? 'Остановлено' : training.status}
                     </span>
                   </div>
                   {training.currentEpoch > 0 && training.totalEpochs && (
