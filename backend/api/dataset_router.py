@@ -65,18 +65,6 @@ def _write_dataset_yaml(file_path: str, classes: list[str]) -> None:
         yaml_file.write(yaml_content)
 
 
-def _load_json_file(file_path: str) -> dict[str, Any] | None:
-    if not os.path.isfile(file_path):
-        return None
-
-    try:
-        with open(file_path, "r", encoding="utf-8") as source:
-            data = json.load(source)
-        return data if isinstance(data, dict) else None
-    except (OSError, json.JSONDecodeError):
-        return None
-
-
 def _read_text_file(file_path: str) -> str:
     try:
         with open(file_path, "r", encoding="utf-8") as source:
@@ -229,18 +217,23 @@ def list_datasets():
 
         dataset_name = entry.name
         dataset_dir = entry.path
-        meta = _load_json_file(os.path.join(dataset_dir, "dataset_meta.json")) or {}
         images = _collect_image_entries(dataset_name, dataset_dir)
-        collection_name = meta.get("collection_name") or dataset_name
-        created_at = meta.get("exported_at") or datetime.fromtimestamp(Path(dataset_dir).stat().st_mtime).isoformat()
-        train_percent = _clamp_train_percent(meta.get("train_percent"))
+        created_at = datetime.fromtimestamp(Path(dataset_dir).stat().st_mtime).isoformat()
+        train_count = sum(1 for image in images if image.get("split") == "train")
+        val_count = sum(1 for image in images if image.get("split") == "val")
+        total_split_images = train_count + val_count
+        train_percent = (
+            _clamp_train_percent(round(train_count * 100 / total_split_images))
+            if total_split_images
+            else DEFAULT_TRAIN_PERCENT
+        )
 
         datasets.append(
             {
                 "id": dataset_name,
                 "datasetName": dataset_name,
                 "datasetYamlPath": str(Path(dataset_dir) / "dataset.yaml"),
-                "name": collection_name,
+                "name": dataset_name,
                 "date": created_at,
                 "imageCount": len(images),
                 "trainSplitPercent": train_percent,
@@ -356,28 +349,6 @@ async def export_dataset(
             classes_file.write("\n".join(classes))
             if classes:
                 classes_file.write("\n")
-
-        metadata_to_save = {
-            **metadata,
-            "collection_name": collection_name,
-            "dataset_name": dataset_name,
-            "exported_at": datetime.now().isoformat(),
-            "train_percent": train_percent,
-            "val_percent": 100 - train_percent,
-            "split_counts": split_counts,
-            "items": [
-                {
-                    "relativePath": item["normalizedRelativePath"],
-                    "originalFileName": item.get("originalFileName"),
-                    "split": item["split"],
-                    "annotationTxt": item.get("annotationTxt") or "",
-                }
-                for item in split_plan
-            ],
-        }
-
-        with open(os.path.join(dataset_dir, "dataset_meta.json"), "w", encoding="utf-8") as meta_file:
-            json.dump(metadata_to_save, meta_file, ensure_ascii=False, indent=2)
 
         return {
             "status": "success",
