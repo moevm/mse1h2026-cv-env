@@ -92,7 +92,7 @@ function Canvas({
     ctx.drawImage(img, 0, 0, img.width, img.height);
 
     annotations.forEach((annotation) => {
-      const color = getClassColor(annotation.classId);
+      const color = annotation.color || getClassColor(annotation.classId);
       const isSelected = selectedForEdit?.id === annotation.id;
 
       ctx.strokeStyle = color;
@@ -110,7 +110,7 @@ function Canvas({
 
         // Label
         const classObj = classes.find((c) => c.id === annotation.classId);
-        const className = classObj ? classObj.name : "Unknown";
+        const className = annotation.className || (classObj ? classObj.name : "Unknown");
         ctx.fillStyle = color;
         ctx.font = "bold 14px Arial";
         const textWidth = ctx.measureText(className).width;
@@ -130,7 +130,7 @@ function Canvas({
 
         // Label
         const classObj = classes.find((c) => c.id === annotation.classId);
-        const className = classObj ? classObj.name : "Unknown";
+        const className = annotation.className || (classObj ? classObj.name : "Unknown");
         const center = annotation.points.reduce(
           (acc, p) => ({
             x: acc.x + p.x / annotation.points.length,

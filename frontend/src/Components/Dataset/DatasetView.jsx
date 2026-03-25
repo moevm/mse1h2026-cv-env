@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from "react";
+import React from "react";
 import VersionList from "./VersionList";
-
 import "../../styles/DatasetView.css";
 
 function DatasetView({
@@ -10,9 +9,8 @@ function DatasetView({
   onCreateVersion,
   onSelectVersion,
   onUpdateSplit,
+  onSync
 }) {
-  const [showAugmenter, setShowAugmenter] = useState(false);
-
   return (
     <div className="dataset-view">
       <div className="dataset-header">
@@ -32,27 +30,13 @@ function DatasetView({
           </button>
           <button
             className="action-button"
-            onClick={() => setShowAugmenter(true)}
-            disabled={!currentVersionId}
+            onClick={() => onSync(collection.id)}
+            disabled={!collection.directoryHandle}
           >
-            📁 Дополнить датасет
+            🔄 Синхронизировать
           </button>
         </div>
       </div>
-
-      {showAugmenter && (
-        <div className="augmenter-modal">
-          <div className="modal-content">
-            <h3>Дополнить датасет "{collection.name}"</h3>
-            <p>Текущая версия: {currentVersion?.name}</p>
-            <FolderUploader
-              onFolderUpload={handleAugment}
-              onCancel={() => setShowAugmenter(false)}
-              buttonText="Выбрать папку с новыми изображениями"
-            />
-          </div>
-        </div>
-      )}
 
       <div className="dataset-content">
         <div className="versions-section">

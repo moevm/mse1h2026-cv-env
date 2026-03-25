@@ -19,6 +19,12 @@ function AnnotationView({ collection, versions, currentVersionId }) {
 
   const currentVersion = versions.find((v) => v.id === currentVersionId);
   const images = currentVersion?.images || collection?.images || [];
+  const galleryImages = images.map((image) => ({
+    ...image,
+    isMarked:
+      Boolean(image.annotationFile) ||
+      annotationsManager.getAnnotationsByImage(image.name).length > 0,
+  }));
 
   function handleImageClick(image) {
     setCurrentImage(image);
@@ -77,7 +83,7 @@ function AnnotationView({ collection, versions, currentVersionId }) {
         )}
       </div>
 
-      <ImageGallery images={images} onImageClick={handleImageClick} />
+      <ImageGallery images={galleryImages} onImageClick={handleImageClick} />
 
       {showViewer && currentImage && (
         <ImageViewer

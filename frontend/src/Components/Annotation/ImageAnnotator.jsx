@@ -5,7 +5,7 @@ import AnnotationPopup from "./AnnotationPopup";
 import { isPointInRect, isPointInPolygon } from "../../utils/canvasUtils";
 import "../../styles/AnnotationView.css";
 
-function ImageAnnotator({ imageUrl, imageName, onClose, annotationsManager }) {
+function ImageAnnotator({ imageUrl, imageName, externalAnnotations = [], onClose, annotationsManager }) {
   const {
     annotations,
     classes,
@@ -33,6 +33,8 @@ function ImageAnnotator({ imageUrl, imageName, onClose, annotationsManager }) {
   const currentImageAnnotations = annotations.filter(
     (a) => a.imageId === imageName,
   );
+
+  const displayedAnnotations = [...externalAnnotations, ...currentImageAnnotations];
 
   const findAnnotationAtPoint = useCallback(
     (point) => {
@@ -264,7 +266,7 @@ function ImageAnnotator({ imageUrl, imageName, onClose, annotationsManager }) {
         <div className="canvas-container">
           <Canvas
             imageUrl={imageUrl}
-            annotations={currentImageAnnotations}
+            annotations={displayedAnnotations}
             classes={classes}
             getClassColor={getClassColor}
             selectedForEdit={selectedForEdit}
