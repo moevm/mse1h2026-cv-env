@@ -14,19 +14,21 @@ function ImageViewer({
 }) {
   const [currentUrl, setCurrentUrl] = useState(null);
   const [txtAnnotations, setTxtAnnotations] = useState([]);
-  const urlsRef = useRef([]); // храним все созданные URL
+  const urlsRef = useRef([]);
 
   useEffect(() => {
     if (!image) return;
 
     let isActive = true;
-    const file = image.file;
-    const newUrl = URL.createObjectURL(file);
-    urlsRef.current.push(newUrl);
+    const newUrl = image.url || URL.createObjectURL(image.file);
+    if (!image.url) {
+      urlsRef.current.push(newUrl);
+    }
     setCurrentUrl(newUrl);
 
     const loadTxtAnnotations = async () => {
-      if (!image.annotationFile) {
+      const hasInlineText = typeof image.annotationText === "string" && image.annotationText.length > 0;
+      if (!hasInlineText && !image.annotationFile) {
         if (isActive) {
           setTxtAnnotations([]);
         }
@@ -34,25 +36,23 @@ function ImageViewer({
       }
 
       try {
-        const [txtContent, imageSize] = await Promise.all([
-          image.annotationFile.text(),
-          new Promise((resolve, reject) => {
-            const previewImage = new Image();
-            previewImage.onload = () => {
-              resolve({ width: previewImage.naturalWidth, height: previewImage.naturalHeight });
-            };
-            previewImage.onerror = reject;
-            previewImage.src = newUrl;
-          }),
-        ]);
+        const txtPromise = hasInlineText ? Promise.resolve(image.annotationText) : image.annotationFile.text();
+        const sizePromise = new Promise((resolve, reject) => {
+          const previewImage = new Image();
+          previewImage.onload = () => {
+            resolve({ width: previewImage.naturalWidth, height: previewImage.naturalHeight });
+          };
+          previewImage.onerror = reject;
+          previewImage.src = newUrl;
+        });
+
+        const [txtContent, imageSize] = await Promise.all([txtPromise, sizePromise]);
 
         if (!isActive) return;
 
-        setTxtAnnotations(
-          parseTxtAnnotations(txtContent, imageSize.width, imageSize.height),
-        );
+        setTxtAnnotations(parseTxtAnnotations(txtContent, imageSize.width, imageSize.height));
       } catch (error) {
-        console.error('Не удалось прочитать txt-разметку:', error);
+        console.error("Не удалось прочитать txt-разметку:", error);
         if (isActive) {
           setTxtAnnotations([]);
         }
@@ -66,7 +66,6 @@ function ImageViewer({
     };
   }, [image]);
 
-  // При размонтировании отзываем все созданные URL
   useEffect(() => {
     return () => {
       urlsRef.current.forEach((url) => URL.revokeObjectURL(url));
@@ -93,6 +92,7 @@ function ImageViewer({
         </div>
         <ImageAnnotator
           imageUrl={currentUrl}
+          imageId={image.relativePath}
           imageName={image.name}
           externalAnnotations={txtAnnotations}
           onClose={onClose}

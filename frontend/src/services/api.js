@@ -1,6 +1,8 @@
+const API_BASE_URL = "http://localhost:8000";
+
 // Augmentation
 export const getAugmentations = async () => {
-  const res = await fetch(`http://localhost:8000/api/augmentation/config`);
+  const res = await fetch(`${API_BASE_URL}/api/augmentation/config`);
   if (!res.ok) {
     throw new Error("Ошибка загрузки конфигурации");
   }
@@ -8,7 +10,7 @@ export const getAugmentations = async () => {
 };
 
 export const saveAugmentations = async (data) => {
-  const res = await fetch("http://localhost:8000/api/augmentation/config", {
+  const res = await fetch(`${API_BASE_URL}/api/augmentation/config`, {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
@@ -25,7 +27,7 @@ export const saveAugmentations = async (data) => {
 
 // Training
 export const getTrainingConfig = async () => {
-  const res = await fetch(`http://localhost:8000/api/training/config`);
+  const res = await fetch(`${API_BASE_URL}/api/training/config`);
   if (!res.ok) {
     throw new Error("Ошибка загрузки конфигурации обучения");
   }
@@ -33,7 +35,7 @@ export const getTrainingConfig = async () => {
 };
 
 export const saveTrainingConfig = async (data) => {
-  const res = await fetch(`http://localhost:8000/api/training/config`, {
+  const res = await fetch(`${API_BASE_URL}/api/training/config`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -49,7 +51,7 @@ export const saveTrainingConfig = async (data) => {
 };
 
 export const startTraining = async (data) => {
-  const res = await fetch(`http://localhost:8000/api/training/start`, {
+  const res = await fetch(`${API_BASE_URL}/api/training/start`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -66,7 +68,7 @@ export const startTraining = async (data) => {
 };
 
 export const validateModel = async (modelName) => {
-  const res = await fetch(`http://localhost:8000/api/training/validate-model`, {
+  const res = await fetch(`${API_BASE_URL}/api/training/validate-model`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -83,7 +85,7 @@ export const validateModel = async (modelName) => {
 };
 
 export const getTrainingStatus = async (taskId) => {
-  const res = await fetch(`http://localhost:8000/api/training/status/${taskId}`);
+  const res = await fetch(`${API_BASE_URL}/api/training/status/${taskId}`);
   if (!res.ok) {
     throw new Error("Ошибка получения статуса обучения");
   }
@@ -91,7 +93,7 @@ export const getTrainingStatus = async (taskId) => {
 };
 
 export const stopTraining = async (taskId) => {
-  const res = await fetch(`http://localhost:8000/api/training/stop/${taskId}`, {
+  const res = await fetch(`${API_BASE_URL}/api/training/stop/${taskId}`, {
     method: "POST",
   });
 
@@ -103,9 +105,74 @@ export const stopTraining = async (taskId) => {
 };
 
 export const getTrainingLogs = async (taskId, limit = 100) => {
-  const res = await fetch(`http://localhost:8000/api/training/logs/${taskId}?limit=${limit}`);
+  const res = await fetch(`${API_BASE_URL}/api/training/logs/${taskId}?limit=${limit}`);
   if (!res.ok) {
     throw new Error("Ошибка получения логов обучения");
+  }
+  return await res.json();
+};
+export const getStoredDatasets = async () => {
+  const res = await fetch(`${API_BASE_URL}/api/datasets`);
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.detail || "Ошибка загрузки сохранённых датасетов");
+  }
+
+  return await res.json();
+};
+
+// Dataset
+export const exportDataset = async ({ collectionName, classes, items, trainPercent }) => {
+  const formData = new FormData();
+  formData.append("collection_name", collectionName);
+
+  const metadata = {
+    collection_name: collectionName,
+    trainPercent,
+    classes,
+    items: items.map((item, uploadIndex) => ({
+      uploadIndex,
+      originalFileName: item.file.name,
+      relativePath: item.relativePath,
+      annotationTxt: item.annotationTxt,
+    })),
+  };
+
+  formData.append("metadata_json", JSON.stringify(metadata));
+  items.forEach((item) => {
+    formData.append("files", item.file, item.file.name);
+  });
+
+  const res = await fetch(`${API_BASE_URL}/api/datasets/export`, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.detail || "Ошибка экспорта датасета");
+  }
+
+  return await res.json();
+};
+
+export const deleteStoredDataset = async (datasetName) => {
+  const res = await fetch(`${API_BASE_URL}/api/datasets/${encodeURIComponent(datasetName)}`, {
+    method: "DELETE",
+  });
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.detail || "Ошибка удаления коллекции");
+  }
+
+  return await res.json();
+};
+
+export const getDataset = async () => {
+  const res = await fetch(`${API_BASE_URL}/api/datasets/config`);
+  if (!res.ok) {
+    throw new Error("Ошибка загрузки конфигурации");
   }
   return await res.json();
 };

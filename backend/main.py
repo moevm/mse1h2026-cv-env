@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from core.paths import ensure_directories
-from api import augmentation_router, training_router
+from api import dataset_router, augmentation_router, training_router
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
 from contextlib import asynccontextmanager
@@ -39,5 +39,6 @@ app.add_middleware(
 )
 ensure_directories()
 
+app.include_router(dataset_router.router)
 app.include_router(augmentation_router.router)
 app.include_router(training_router.router)
