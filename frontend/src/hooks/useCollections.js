@@ -3,9 +3,18 @@ import { useState } from "react";
 function useCollections() {
   const [collections, setCollections] = useState([]);
 
-    const addCollection = (files, collectionName) => {
-    const imageFiles = Array.from(files).filter((file) =>
-      file.type.startsWith("image/"),
+  const addCollection = (files, collectionName) => {
+    const allFiles = Array.from(files);
+
+    const imageFiles = allFiles.filter((file) => file.type.startsWith("image/"));
+    const txtFiles = allFiles.filter((file) => file.name.toLowerCase().endsWith(".txt"));
+
+    const txtByRelativePath = new Map(
+      txtFiles.map((file) => {
+        const relativePath = file.webkitRelativePath || file.name;
+        const txtKey = relativePath.replace(/\.txt$/i, "");
+        return [txtKey, file];
+      }),
     );
 
     // Сортировка по имени файла (с учётом локали для естественного порядка)
@@ -16,13 +25,19 @@ function useCollections() {
       }),
     );
 
-    const images = sortedImageFiles.map((file) => ({
-      file,
-      name: file.name,
-      type: file.type,
-      size: file.size,
-      relativePath: file.webkitRelativePath || file.name, // для уникальности
-    }));
+    const images = sortedImageFiles.map((file) => {
+      const relativePath = file.webkitRelativePath || file.name;
+      const imageKey = relativePath.replace(/\.[^.]+$/, "");
+
+      return {
+        file,
+        annotationFile: txtByRelativePath.get(imageKey) || null,
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        relativePath, // для уникальности
+      };
+    });
 
     const newCollection = {
       id: Date.now().toString(),
