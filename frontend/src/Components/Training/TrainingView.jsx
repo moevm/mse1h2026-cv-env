@@ -18,7 +18,6 @@ function TrainingView({ collection, currentVersionId }) {
   const [isLoading, setIsLoading] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const [datasetYamlPath, setDatasetYamlPath] = useState(null);
-  const [isLoadingYaml, setIsLoadingYaml] = useState(false);
   const completedTasksRef = useRef(new Set());
   const websocketsRef = useRef({});
   
@@ -193,7 +192,6 @@ function TrainingView({ collection, currentVersionId }) {
         return;
       }
 
-      setIsLoadingYaml(true);
       try {
         const result = await getDataset(collection.name);
         setDatasetYamlPath(result.yaml_path);
@@ -201,8 +199,6 @@ function TrainingView({ collection, currentVersionId }) {
       } catch (error) {
         addLog(`Ошибка загрузки пути к датасету: ${error.message}`, "error");
         setDatasetYamlPath(null);
-      } finally {
-        setIsLoadingYaml(false);
       }
     };
 
