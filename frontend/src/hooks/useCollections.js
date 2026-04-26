@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { getAllFilesFromDirectory } from "../utils/fileSystem";
-import { deleteStoredDataset, getStoredDatasets } from "../services/api";
+import { deleteStoredDataset, getStoredDatasets, createRawDataset } from "../services/api";
 
 const DEFAULT_TRAIN_SPLIT_PERCENT = 80;
 
@@ -52,7 +52,9 @@ function buildStoredCollection(dataset) {
     ? dataset.images.map((image) => ({
         file: null,
         url: image.url ? `http://localhost:8000${image.url}` : null,
-        name: image.name,
+        name: image.name,  // здесь будет UUID (или оригинал, зависит от бэкенда)
+        originalName: image.originalName || image.name,
+        uuid: image.uuid || image.storedPath?.split('/').pop()?.replace(/\.[^/.]+$/, '') || image.name,
         type: "image/*",
         size: null,
         relativePath: image.relativePath || image.name,
@@ -110,23 +112,52 @@ function useCollections() {
     loadStoredCollections();
   }, [loadStoredCollections]);
 
-  const addCollection = (files, collectionName, directoryHandle) => {
-    const images = buildImagesWithAnnotations(files);
-
-    const newCollection = {
-      id: Date.now().toString(),
-      name: collectionName || `Коллекция от ${new Date().toLocaleString()}`,
-      date: new Date().toISOString(),
-      images,
-      imageCount: images.length,
-      directoryHandle,
-      persisted: false,
-      trainSplitPercent: DEFAULT_TRAIN_SPLIT_PERCENT,
-      valSplitPercent: 100 - DEFAULT_TRAIN_SPLIT_PERCENT,
-    };
-
-    setCollections((prev) => [newCollection, ...prev]);
-    return newCollection.id;
+  const addCollection = async (files, collectionName, directoryHandle) => {
+    console.log("=== addCollection called ===");
+    console.log("collectionName:", collectionName);
+    console.log("files count:", files.length);
+    
+    try {
+      const result = await createRawDataset(collectionName, Array.from(files));
+      console.log("createRawDataset result:", result);
+      
+      const response = await getStoredDatasets();
+      console.log("getStoredDatasets response:", response);
+      
+      const updatedDataset = response.datasets.find(d => d.datasetName === result.dataset_id);
+      
+      if (!updatedDataset) {
+        throw new Error("Dataset not found after creation");
+      }
+      
+      const newCollection = buildStoredCollection(updatedDataset);
+      newCollection.directoryHandle = directoryHandle;
+      newCollection.persisted = true;
+      
+      setCollections((prev) => [newCollection, ...prev]);
+      
+      console.log("Collection created successfully:", newCollection.id);
+      return newCollection.id;
+      
+    } catch (error) {
+      console.error("Failed to create dataset:", error);
+      
+      console.log("Falling back to local storage...");
+      const images = buildImagesWithAnnotations(files);
+      const newCollection = {
+        id: Date.now().toString(),
+        name: collectionName || `Коллекция от ${new Date().toLocaleString()}`,
+        date: new Date().toISOString(),
+        images,
+        imageCount: images.length,
+        directoryHandle,
+        persisted: false,
+        trainSplitPercent: DEFAULT_TRAIN_SPLIT_PERCENT,
+        valSplitPercent: 100 - DEFAULT_TRAIN_SPLIT_PERCENT,
+      };
+      setCollections((prev) => [newCollection, ...prev]);
+      return newCollection.id;
+    }
   };
 
   const removeCollection = async (collectionId) => {

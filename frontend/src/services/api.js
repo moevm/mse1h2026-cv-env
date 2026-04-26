@@ -177,3 +177,24 @@ export const getDataset = async (datasetName) => {
   }
   return await res.json();
 };
+
+export async function createRawDataset(datasetName, files) {
+  const formData = new FormData();
+  formData.append("dataset_name", datasetName);
+  
+  for (const file of files) {
+    formData.append("files", file);
+  }
+  
+  const response = await fetch("http://localhost:8000/api/datasets/upload-raw", {
+    method: "POST",
+    body: formData,
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || "Failed to upload dataset");
+  }
+  
+  return response.json();
+}

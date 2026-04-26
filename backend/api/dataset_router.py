@@ -1,4 +1,5 @@
 import json
+import uuid
 import mimetypes
 import os
 import re
@@ -93,11 +94,77 @@ def _resolve_dataset_subpath(dataset_name: str, base_dir_name: str, nested_path:
 
     return str(resolved_path)
 
+def _load_uuid_mapping(dataset_dir: Path) -> dict:
+    """Загружает маппинг UUID -> original_name, split."""
+    mapping_file = dataset_dir / "uuid_mapping.json"
+    if not mapping_file.exists():
+        return {}
+    with open(mapping_file, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _save_uuid_mapping(dataset_dir: Path, mapping: dict) -> None:
+    """Сохраняет маппинг UUID."""
+    with open(dataset_dir / "uuid_mapping.json", "w", encoding="utf-8") as f:
+        json.dump(mapping, f, indent=2, ensure_ascii=False)
+
 
 def _collect_image_entries(dataset_name: str, dataset_dir: str) -> list[dict[str, Any]]:
+    """
+    Собирает информацию об изображениях в датасете.
+    Поддерживает два формата:
+    1. UUID-формат (с uuid_mapping.json) - изображения в папке images/
+    2. Legacy-формат (с train/val сплитами) - для обратной совместимости
+    """
     dataset_root = Path(dataset_dir)
+    
+    # Проверяем, есть ли uuid_mapping.json (новый формат)
+    uuid_mapping = _load_uuid_mapping(dataset_root)
+    
+    if uuid_mapping:
+        # === НОВЫЙ ФОРМАТ: UUID-имена, все файлы в images/ и labels/ ===
+        entries = []
+        images_dir = dataset_root / "images"
+        labels_dir = dataset_root / "labels"
+        
+        if not images_dir.exists():
+            return entries
+        
+        for image_file in images_dir.iterdir():
+            if not image_file.is_file() or image_file.suffix.lower() not in IMAGE_EXTENSIONS:
+                continue
+            
+            uid = image_file.stem  # имя файла без расширения = UUID
+            
+            # Получаем оригинальное имя из маппинга
+            original_name = uuid_mapping.get(uid, {}).get("original_name", uid)
+            split = uuid_mapping.get(uid, {}).get("split")  # может быть None
+            
+            # Путь к файлу разметки
+            label_file = labels_dir / f"{uid}.txt"
+            annotation_text = _read_text_file(str(label_file)) if label_file.exists() else ""
+            
+            # Формируем путь для URL
+            stored_path = f"images/{image_file.name}"
+            
+            entries.append({
+                "name": uid,  # ← UUID показываем пользователю
+                "originalName": original_name,  # оригинальное имя (для справки)
+                "relativePath": uid,
+                "storedPath": stored_path,
+                "split": split,
+                "url": f"/api/datasets/{quote(dataset_name)}/files/{_quote_path_parts(stored_path)}",
+                "annotationText": annotation_text,
+                "uuid": uid,
+            })
+        
+        # Сортируем по UUID для консистентности
+        entries.sort(key=lambda x: x["name"])
+        return entries
+    
+    # === LEGACY ФОРМАТ: train/val сплиты (старая логика) ===
     collected: list[dict[str, Any]] = []
-
+    
     # New layout: train/images, train/labels, val/images, val/labels
     for split_name in ("train", "val"):
         image_source = dataset_root / split_name / "images"
@@ -166,7 +233,6 @@ def _collect_image_entries(dataset_name: str, dataset_dir: str) -> list[dict[str
             )
 
     return collected
-
 
 def _clamp_train_percent(train_percent: int | float | None) -> int:
     try:
@@ -391,3 +457,73 @@ async def export_dataset(
         if os.path.isdir(dataset_dir):
             shutil.rmtree(dataset_dir, ignore_errors=True)
         raise HTTPException(status_code=500, detail=f"Не удалось экспортировать датасет: {exc}") from exc
+
+
+@router.post("/upload-raw")
+async def upload_raw_dataset(
+    dataset_name: str = Form(...),
+    files: list[UploadFile] = File(...),
+):
+    """Загрузка датасета с UUID-именами. Без сплита. Все файлы в images/ и labels/."""
+    
+    safe_name = _sanitize_dataset_name(dataset_name)
+    dataset_dir = Path(DATASETS_DIR) / safe_name
+    
+    if dataset_dir.exists():
+        raise HTTPException(status_code=400, detail="Датасет уже существует")
+    
+    # Создаём структуру
+    dataset_dir.mkdir(parents=True)
+    images_dir = dataset_dir / "images"
+    labels_dir = dataset_dir / "labels"
+    images_dir.mkdir()
+    labels_dir.mkdir()
+    
+    # Группируем файлы по stem (имя без расширения)
+    images_by_stem = {}
+    labels_by_stem = {}
+    
+    for file in files:
+        stem = Path(file.filename).stem.lower()
+        ext = Path(file.filename).suffix.lower()
+        
+        if ext in IMAGE_EXTENSIONS:
+            images_by_stem[stem] = file
+        elif ext == ".txt":
+            labels_by_stem[stem] = file
+    
+    uuid_mapping = {}
+    
+    for stem, image_file in images_by_stem.items():
+        uid = str(uuid.uuid4())
+        ext = Path(image_file.filename).suffix.lower()
+        
+        # Сохраняем изображение
+        image_path = images_dir / f"{uid}{ext}"
+        content = await image_file.read()
+        with open(image_path, "wb") as f:
+            f.write(content)
+        
+        # Сохраняем разметку (если есть)
+        label_path = labels_dir / f"{uid}.txt"
+        if stem in labels_by_stem:
+            label_content = await labels_by_stem[stem].read()
+            with open(label_path, "wb") as f:
+                f.write(label_content)
+        else:
+            label_path.write_text("", encoding="utf-8")  # пустой txt
+        
+        uuid_mapping[uid] = {
+            "original_name": image_file.filename,
+            "split": None,  # пока нет сплита
+        }
+    
+    # Сохраняем маппинг
+    with open(dataset_dir / "uuid_mapping.json", "w") as f:
+        json.dump(uuid_mapping, f, indent=2)
+    
+    return {
+        "status": "success",
+        "dataset_id": safe_name,
+        "images_count": len(uuid_mapping)
+    }

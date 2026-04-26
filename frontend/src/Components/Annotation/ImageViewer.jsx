@@ -92,7 +92,7 @@ function ImageViewer({
         </div>
         <ImageAnnotator
           imageUrl={currentUrl}
-          imageId={image.relativePath}
+          imageId={image.uuid}
           imageName={image.name}
           externalAnnotations={txtAnnotations}
           onClose={onClose}
