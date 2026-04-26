@@ -14,6 +14,8 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from core.paths import DATASETS_DIR
+from schemas.annotation_schema import SaveAnnotationRequest
+
 
 router = APIRouter(prefix="/api/datasets", tags=["Datasets"])
 
@@ -527,3 +529,105 @@ async def upload_raw_dataset(
         "dataset_id": safe_name,
         "images_count": len(uuid_mapping)
     }
+
+
+@router.post("/{dataset_name}/annotations/class")
+async def add_annotation_class(dataset_name: str, class_name: str):
+    """Добавляет новый класс в classes.txt датасета."""
+    safe_name = _sanitize_dataset_name(dataset_name)
+    dataset_dir = Path(DATASETS_DIR) / safe_name
+    
+    if not dataset_dir.exists():
+        raise HTTPException(status_code=404, detail="Датасет не найден")
+    
+    classes_file = dataset_dir / "classes.txt"
+    
+    # Читаем существующие классы
+    existing_classes = []
+    if classes_file.exists():
+        existing_classes = [line.strip() for line in classes_file.read_text(encoding="utf-8").split("\n") if line.strip()]
+    
+    # Добавляем новый класс если его ещё нет
+    if class_name.strip() not in existing_classes:
+        existing_classes.append(class_name.strip())
+        
+        # Сохраняем обновленный список
+        classes_file.write_text("\n".join(existing_classes) + "\n", encoding="utf-8")
+    
+    # Обновляем dataset.yaml с новыми классами
+    dataset_yaml = dataset_dir / "dataset.yaml"
+    if dataset_yaml.exists():
+        _write_dataset_yaml(str(dataset_yaml), existing_classes, str(dataset_dir.resolve()))
+    
+    return {
+        "status": "success",
+        "class_name": class_name.strip(),
+        "class_index": existing_classes.index(class_name.strip()),
+        "all_classes": existing_classes,
+    }
+
+
+@router.post("/{dataset_name}/annotations/save")
+async def save_annotation(dataset_name: str, request: SaveAnnotationRequest):
+    """Сохраняет разметку для изображения в txt файл."""
+    safe_name = _sanitize_dataset_name(dataset_name)
+    dataset_dir = Path(DATASETS_DIR) / safe_name
+    
+    if not dataset_dir.exists():
+        raise HTTPException(status_code=404, detail="Датасет не найден")
+    
+    image_uuid = request.image_uuid
+    annotation_content = request.content
+    classes = request.classes or []
+    
+    # Ищем где находится файл разметки (может быть в images/labels или train/val/labels)
+    labels_dir = dataset_dir / "labels"
+    
+    # Если нет такой структуры, пытаемся найти в train/val
+    if not labels_dir.exists():
+        # Пробуем train/labels и val/labels
+        for split in ["train", "val", "test"]:
+            potential_labels = dataset_dir / split / "labels"
+            if potential_labels.exists():
+                labels_dir = potential_labels
+                break
+    
+    if not labels_dir.exists():
+        labels_dir = dataset_dir / "labels"
+        labels_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Сохраняем аннотацию
+    label_file = labels_dir / f"{image_uuid}.txt"
+    label_file.write_text(annotation_content, encoding="utf-8")
+    
+    # Обновляем classes.txt если переданы новые классы
+    if classes:
+        classes_file = dataset_dir / "classes.txt"
+        
+        # Читаем существующие классы
+        existing_classes = []
+        if classes_file.exists():
+            existing_classes = [line.strip() for line in classes_file.read_text(encoding="utf-8").split("\n") if line.strip()]
+        
+        # Добавляем новые классы которых нет
+        updated = False
+        for class_name in classes:
+            if class_name.strip() not in existing_classes:
+                existing_classes.append(class_name.strip())
+                updated = True
+        
+        if updated:
+            classes_file.write_text("\n".join(existing_classes) + "\n", encoding="utf-8")
+            
+            # Обновляем dataset.yaml
+            dataset_yaml = dataset_dir / "dataset.yaml"
+            if dataset_yaml.exists():
+                _write_dataset_yaml(str(dataset_yaml), existing_classes, str(dataset_dir.resolve()))
+    
+    return {
+        "status": "success",
+        "image_uuid": image_uuid,
+        "label_path": str(label_file.relative_to(dataset_dir)),
+        "classes_updated": len(classes) > 0,
+    }
+

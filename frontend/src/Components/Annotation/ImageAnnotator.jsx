@@ -3,9 +3,10 @@ import Canvas from "./Canvas";
 import AnnotationToolbar from "./AnnotationToolbar";
 import AnnotationPopup from "./AnnotationPopup";
 import { isPointInRect, isPointInPolygon } from "../../utils/canvasUtils";
+import { addAnnotationClass, saveAnnotation } from "../../services/api";
 import "../../styles/AnnotationView.css";
 
-function ImageAnnotator({ imageUrl, imageId, imageName, externalAnnotations = [], onClose, annotationsManager }) {
+function ImageAnnotator({ imageUrl, imageId, imageName, datasetName, externalAnnotations = [], onClose, annotationsManager }) {
   const {
     annotations,
     classes,
@@ -176,13 +177,67 @@ function ImageAnnotator({ imageUrl, imageId, imageName, externalAnnotations = []
   );
 
   const handleDoubleClick = useCallback(
-    (e, coords) => {
+    async (e, coords) => {
       if (selectedForEdit && window.confirm("Удалить выделенную область?")) {
-        deleteAnnotation(selectedForEdit.id);
+        const deletedAnnotationId = selectedForEdit.id;
+        const deletedImageId = selectedForEdit.imageId;
+        
+        // Удаляем из локального состояния
+        deleteAnnotation(deletedAnnotationId);
+        
+        // Сохраняем обновлённую разметку на бэкенд
+        if (datasetName && deletedImageId) {
+          try {
+            // Получаем оставшиеся аннотации для этого изображения
+            const remainingAnnotations = annotations.filter(
+              (a) => a.imageId === deletedImageId && a.id !== deletedAnnotationId
+            );
+            
+            // Конвертируем в YOLO формат
+            const yoloLines = remainingAnnotations
+              .map((ann) => {
+                const classIndex = classes.findIndex((c) => c.id === ann.classId);
+                if (classIndex === -1) return null;
+                
+                if (ann.type === "rectangle") {
+                  const x = (ann.x + ann.width / 2) / 100;
+                  const y = (ann.y + ann.height / 2) / 100;
+                  const w = ann.width / 100;
+                  const h = ann.height / 100;
+                  return `${classIndex} ${x.toFixed(6)} ${y.toFixed(6)} ${w.toFixed(6)} ${h.toFixed(6)}`;
+                } else if (ann.type === "polygon") {
+                  // Вычисляем bounding box для полигона
+                  if (!ann.points || ann.points.length === 0) return null;
+                  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                  for (const p of ann.points) {
+                    minX = Math.min(minX, p.x);
+                    minY = Math.min(minY, p.y);
+                    maxX = Math.max(maxX, p.x);
+                    maxY = Math.max(maxY, p.y);
+                  }
+                  const xCenter = ((minX + maxX) / 2) / 100;
+                  const yCenter = ((minY + maxY) / 2) / 100;
+                  const width = (maxX - minX) / 100;
+                  const height = (maxY - minY) / 100;
+                  return `${classIndex} ${xCenter.toFixed(6)} ${yCenter.toFixed(6)} ${width.toFixed(6)} ${height.toFixed(6)}`;
+                }
+                return null;
+              })
+              .filter(Boolean)
+              .join("\n");
+            
+            const allClassNames = classes.map((c) => c.name);
+            await saveAnnotation(datasetName, deletedImageId, yoloLines, allClassNames);
+            console.log("Аннотация удалена на бэкенде");
+          } catch (error) {
+            console.error("Ошибка при удалении разметки на бэкенде:", error);
+          }
+        }
+        
         setSelectedForEdit(null);
       }
     },
-    [selectedForEdit, deleteAnnotation],
+    [selectedForEdit, deleteAnnotation, annotations, datasetName, classes, saveAnnotation]
   );
 
   const handleContextMenu = useCallback(
@@ -213,23 +268,101 @@ function ImageAnnotator({ imageUrl, imageId, imageName, externalAnnotations = []
   }, [currentTool]);
 
   const handleSaveAnnotation = useCallback(
-    (classId, newClassName = null) => {
-      let finalClassId = classId;
-      if (newClassName) {
-        finalClassId = addClass(newClassName);
+    async (classId, newClassName = null) => {
+      try {
+        let finalClassId = classId;
+        
+        // Если создается новый класс
+        if (newClassName && datasetName) {
+          try {
+            const response = await addAnnotationClass(datasetName, newClassName);
+            finalClassId = addClass(newClassName);
+          } catch (error) {
+            console.error("Ошибка при добавлении класса:", error);
+            finalClassId = addClass(newClassName);
+          }
+        } else if (newClassName) {
+          finalClassId = addClass(newClassName);
+        }
+        
+        // Сохраняем аннотацию локально
+        if (selectedAnnotation && finalClassId) {
+          const annotation = {
+            ...selectedAnnotation,
+            classId: finalClassId,
+          };
+          addAnnotation(annotation);
+          
+          // Сохраняем на бэкенде если есть datasetName
+          if (datasetName && imageId) {
+            try {
+              // Собираем все аннотации для этого изображения (включая существующие и новую)
+              const allCurrentAnnotations = [
+                ...currentImageAnnotations,
+                annotation,
+              ];
+              
+              const yoloLines = allCurrentAnnotations
+                .map((ann) => {
+                  const classIndex = classes.findIndex((c) => c.id === ann.classId);
+                  if (classIndex === -1) return null;
+                  
+                  if (ann.type === "rectangle") {
+                    // Нормализованные координаты для прямоугольника (0-1)
+                    const x = ann.x / 100;
+                    const y = ann.y / 100;
+                    const w = ann.width / 100;
+                    const h = ann.height / 100;
+                    return `${classIndex} ${x.toFixed(6)} ${y.toFixed(6)} ${w.toFixed(6)} ${h.toFixed(6)}`;
+                    
+                  } else if (ann.type === "polygon") {
+                    // Для полигона: нужен bounding box по точкам
+                    if (!ann.points || ann.points.length === 0) return null;
+                    
+                    // Находим мин/макс координаты полигона
+                    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                    for (const p of ann.points) {
+                      // Координаты уже нормализованы (0-100) из Canvas
+                      minX = Math.min(minX, p.x);
+                      minY = Math.min(minY, p.y);
+                      maxX = Math.max(maxX, p.x);
+                      maxY = Math.max(maxY, p.y);
+                    }
+                    
+                    // Вычисляем центр и размеры (нормализованные 0-1)
+                    const xCenter = ((minX + maxX) / 2) / 100;
+                    const yCenter = ((minY + maxY) / 2) / 100;
+                    const width = (maxX - minX) / 100;
+                    const height = (maxY - minY) / 100;
+                    
+                    return `${classIndex} ${xCenter.toFixed(6)} ${yCenter.toFixed(6)} ${width.toFixed(6)} ${height.toFixed(6)}`;
+                  }
+                  return null;
+                })
+                .filter(Boolean)
+                .join("\n");
+              
+              // Получаем список всех классов для сохранения
+              const allClassNames = classes.map((c) => c.name);
+              
+              await saveAnnotation(datasetName, imageId, yoloLines, allClassNames);
+              console.log("Аннотация сохранена на бэкенд");
+            } catch (error) {
+              console.error("Ошибка при сохранении разметки на бэкенде:", error);
+            }
+          }
+        }
+        
+        setShowPopup(false);
+        setSelectedAnnotation(null);
+      } catch (error) {
+        console.error("Ошибка при сохранении аннотации:", error);
+        setShowPopup(false);
+        setSelectedAnnotation(null);
       }
-      if (selectedAnnotation && finalClassId) {
-        addAnnotation({
-          ...selectedAnnotation,
-          classId: finalClassId,
-        });
-      }
-      setShowPopup(false);
-      setSelectedAnnotation(null);
     },
-    [selectedAnnotation, addClass, addAnnotation],
+    [selectedAnnotation, addClass, addAnnotation, currentImageAnnotations, classes, datasetName, imageId],
   );
-
   const handleCancelAnnotation = useCallback(() => {
     setShowPopup(false);
     setSelectedAnnotation(null);

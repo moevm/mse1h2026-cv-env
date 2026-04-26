@@ -10,6 +10,7 @@ import "../../styles/AnnotationView.css";
 
 const DEFAULT_TRAIN_SPLIT_PERCENT = 80;
 
+
 function getImageSize(image) {
   return new Promise((resolve, reject) => {
     const sourceUrl = image.url || URL.createObjectURL(image.file);
@@ -92,7 +93,7 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
 
-  const annotationsManager = useAnnotations(collection?.id);
+  const annotationsManager = useAnnotations(collection?.id, collection?.name);
 
   useEffect(() => {
     setCurrentImage(null);
@@ -173,9 +174,7 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
       const maxClassId = allUsedClassIds.size > 0 ? Math.max(...allUsedClassIds) : -1;
       const classNames = [...annotationsManager.classes.map((item) => item.name)];
 
-      for (let index = classNames.length; index <= maxClassId; index += 1) {
-        classNames[index] = `class_${index}`;
-      }
+
 
       const response = await exportDataset({
         collectionName: collection.name,
@@ -315,6 +314,7 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
       {showViewer && currentImage && (
         <ImageViewer
           image={currentImage}
+          collection={collection} 
           onClose={handleCloseViewer}
           onNext={handleNextImage}
           onPrev={handlePrevImage}
