@@ -40,16 +40,16 @@ async function ensureImageFile(image) {
   }
 
   if (!image.url) {
-    throw new Error(`Не найден источник изображения ${image.name}`);
+    throw new Error(`Не найден источник изображения ${image.uuid}`);
   }
 
   const response = await fetch(image.url);
   if (!response.ok) {
-    throw new Error(`Не удалось загрузить изображение ${image.name}`);
+    throw new Error(`Не удалось загрузить изображение ${image.uuid}`);
   }
 
   const blob = await response.blob();
-  return new File([blob], image.name, {
+  return new File([blob], image.uuid, {
     type: blob.type || image.type || "application/octet-stream",
     lastModified: Date.now(),
   });
@@ -107,7 +107,7 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
     isMarked:
       Boolean(image.annotationFile) ||
       Boolean(image.annotationText) ||
-      annotationsManager.getAnnotationsByImage(image.relativePath).length > 0,
+      annotationsManager.getAnnotationsByImage(image.uuid).length > 0,
   }));
 
   const trainSplitPercent = collection?.trainSplitPercent ?? DEFAULT_TRAIN_SPLIT_PERCENT;
@@ -139,7 +139,7 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
         const existingTxt = image.annotationFile
           ? await image.annotationFile.text()
           : image.annotationText || "";
-        const drawnAnnotations = annotationsManager.getAnnotationsByImage(image.relativePath);
+        const drawnAnnotations = annotationsManager.getAnnotationsByImage(image.uuid);
 
         const drawnLines = drawnAnnotations
           .map((annotation) => {
@@ -165,7 +165,7 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
 
         items.push({
           file: imageFile,
-          relativePath: image.relativePath,
+          relativePath: image.uuid,
           annotationTxt: mergedLines,
         });
       }
@@ -224,7 +224,7 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
   function handleNextImage() {
     if (currentImage && images.length > 0) {
       const currentIndex = images.findIndex(
-        (img) => img.relativePath === currentImage.relativePath,
+        (img) => img.relativePath === currentImage.uuid,
       );
       if (currentIndex < images.length - 1) {
         setCurrentImage(images[currentIndex + 1]);
@@ -235,7 +235,7 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
   function handlePrevImage() {
     if (currentImage && images.length > 0) {
       const currentIndex = images.findIndex(
-        (img) => img.relativePath === currentImage.relativePath,
+        (img) => img.relativePath === currentImage.uuid,
       );
       if (currentIndex > 0) {
         setCurrentImage(images[currentIndex - 1]);
@@ -252,7 +252,7 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
   }
 
   const currentIndex = currentImage
-    ? images.findIndex((img) => img.relativePath === currentImage.relativePath)
+    ? images.findIndex((img) => img.relativePath === currentImage.uuid)
     : -1;
 
   return (
