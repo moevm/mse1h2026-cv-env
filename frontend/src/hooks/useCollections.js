@@ -52,7 +52,7 @@ function buildStoredCollection(dataset) {
     ? dataset.images.map((image) => ({
         file: null,
         url: image.url ? `http://localhost:8000${image.url}` : null,
-        name: image.name,  // здесь будет UUID (или оригинал, зависит от бэкенда)
+        name: image.name,  
         originalName: image.originalName || image.name,
         uuid: image.uuid || image.storedPath?.split('/').pop()?.replace(/\.[^/.]+$/, '') || image.name,
         type: "image/*",

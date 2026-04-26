@@ -120,11 +120,9 @@ def _collect_image_entries(dataset_name: str, dataset_dir: str) -> list[dict[str
     """
     dataset_root = Path(dataset_dir)
     
-    # Проверяем, есть ли uuid_mapping.json (новый формат)
     uuid_mapping = _load_uuid_mapping(dataset_root)
     
     if uuid_mapping:
-        # === НОВЫЙ ФОРМАТ: UUID-имена, все файлы в images/ и labels/ ===
         entries = []
         images_dir = dataset_root / "images"
         labels_dir = dataset_root / "labels"
@@ -136,9 +134,8 @@ def _collect_image_entries(dataset_name: str, dataset_dir: str) -> list[dict[str
             if not image_file.is_file() or image_file.suffix.lower() not in IMAGE_EXTENSIONS:
                 continue
             
-            uid = image_file.stem  # имя файла без расширения = UUID
+            uid = image_file.stem 
             
-            # Получаем оригинальное имя из маппинга
             original_name = uuid_mapping.get(uid, {}).get("original_name", uid)
             split = uuid_mapping.get(uid, {}).get("split")  # может быть None
             
@@ -150,8 +147,8 @@ def _collect_image_entries(dataset_name: str, dataset_dir: str) -> list[dict[str
             stored_path = f"images/{image_file.name}"
             
             entries.append({
-                "name": uid,  # ← UUID показываем пользователю
-                "originalName": original_name,  # оригинальное имя (для справки)
+                "name": uid, 
+                "originalName": original_name,
                 "relativePath": uid,
                 "storedPath": stored_path,
                 "split": split,
@@ -164,10 +161,8 @@ def _collect_image_entries(dataset_name: str, dataset_dir: str) -> list[dict[str
         entries.sort(key=lambda x: x["name"])
         return entries
     
-    # === LEGACY ФОРМАТ: train/val сплиты (старая логика) ===
     collected: list[dict[str, Any]] = []
     
-    # New layout: train/images, train/labels, val/images, val/labels
     for split_name in ("train", "val"):
         image_source = dataset_root / split_name / "images"
         label_source = dataset_root / split_name / "labels"
@@ -474,14 +469,12 @@ async def upload_raw_dataset(
     if dataset_dir.exists():
         raise HTTPException(status_code=400, detail="Датасет уже существует")
     
-    # Создаём структуру
     dataset_dir.mkdir(parents=True)
     images_dir = dataset_dir / "images"
     labels_dir = dataset_dir / "labels"
     images_dir.mkdir()
     labels_dir.mkdir()
     
-    # Группируем файлы по stem (имя без расширения)
     images_by_stem = {}
     labels_by_stem = {}
     
@@ -542,19 +535,14 @@ async def add_annotation_class(dataset_name: str, class_name: str):
     
     classes_file = dataset_dir / "classes.txt"
     
-    # Читаем существующие классы
     existing_classes = []
     if classes_file.exists():
         existing_classes = [line.strip() for line in classes_file.read_text(encoding="utf-8").split("\n") if line.strip()]
     
-    # Добавляем новый класс если его ещё нет
     if class_name.strip() not in existing_classes:
         existing_classes.append(class_name.strip())
-        
-        # Сохраняем обновленный список
         classes_file.write_text("\n".join(existing_classes) + "\n", encoding="utf-8")
     
-    # Обновляем dataset.yaml с новыми классами
     dataset_yaml = dataset_dir / "dataset.yaml"
     if dataset_yaml.exists():
         _write_dataset_yaml(str(dataset_yaml), existing_classes, str(dataset_dir.resolve()))
@@ -583,9 +571,7 @@ async def save_annotation(dataset_name: str, request: SaveAnnotationRequest):
     # Ищем где находится файл разметки (может быть в images/labels или train/val/labels)
     labels_dir = dataset_dir / "labels"
     
-    # Если нет такой структуры, пытаемся найти в train/val
     if not labels_dir.exists():
-        # Пробуем train/labels и val/labels
         for split in ["train", "val", "test"]:
             potential_labels = dataset_dir / split / "labels"
             if potential_labels.exists():
@@ -596,20 +582,16 @@ async def save_annotation(dataset_name: str, request: SaveAnnotationRequest):
         labels_dir = dataset_dir / "labels"
         labels_dir.mkdir(parents=True, exist_ok=True)
     
-    # Сохраняем аннотацию
     label_file = labels_dir / f"{image_uuid}.txt"
     label_file.write_text(annotation_content, encoding="utf-8")
     
-    # Обновляем classes.txt если переданы новые классы
     if classes:
         classes_file = dataset_dir / "classes.txt"
         
-        # Читаем существующие классы
         existing_classes = []
         if classes_file.exists():
             existing_classes = [line.strip() for line in classes_file.read_text(encoding="utf-8").split("\n") if line.strip()]
         
-        # Добавляем новые классы которых нет
         updated = False
         for class_name in classes:
             if class_name.strip() not in existing_classes:
@@ -619,7 +601,6 @@ async def save_annotation(dataset_name: str, request: SaveAnnotationRequest):
         if updated:
             classes_file.write_text("\n".join(existing_classes) + "\n", encoding="utf-8")
             
-            # Обновляем dataset.yaml
             dataset_yaml = dataset_dir / "dataset.yaml"
             if dataset_yaml.exists():
                 _write_dataset_yaml(str(dataset_yaml), existing_classes, str(dataset_dir.resolve()))

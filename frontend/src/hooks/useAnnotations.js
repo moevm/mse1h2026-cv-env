@@ -52,7 +52,6 @@ const useAnnotations = (scopeKey, datasetName) => {
     if (datasetName) {
       loadClassesFromBackend(datasetName).then((data) => {
         if (data.classes && data.classes.length > 0) {
-          // Конвертируем строки в объекты классов с цветами
           const backendClasses = data.classes.map((className, index) => ({
             id: `class-${index}`,
             name: className,
@@ -108,7 +107,6 @@ const useAnnotations = (scopeKey, datasetName) => {
     
     const lines = [];
     for (const ann of imageAnnotations) {
-      // Находим индекс класса
       const classObj = classes.find(c => c.id === ann.classId);
       let classIndex = classes.findIndex(c => c.id === ann.classId);
       if (classIndex === -1 && classObj) {

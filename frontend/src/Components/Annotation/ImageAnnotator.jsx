@@ -188,7 +188,6 @@ function ImageAnnotator({ imageUrl, imageId, imageName, datasetName, externalAnn
         // Сохраняем обновлённую разметку на бэкенд
         if (datasetName && deletedImageId) {
           try {
-            // Получаем оставшиеся аннотации для этого изображения
             const remainingAnnotations = annotations.filter(
               (a) => a.imageId === deletedImageId && a.id !== deletedAnnotationId
             );
@@ -293,7 +292,6 @@ function ImageAnnotator({ imageUrl, imageId, imageName, datasetName, externalAnn
           };
           addAnnotation(annotation);
           
-          // Сохраняем на бэкенде если есть datasetName
           if (datasetName && imageId) {
             try {
               // Собираем все аннотации для этого изображения (включая существующие и новую)
@@ -329,7 +327,6 @@ function ImageAnnotator({ imageUrl, imageId, imageName, datasetName, externalAnn
                       maxY = Math.max(maxY, p.y);
                     }
                     
-                    // Вычисляем центр и размеры (нормализованные 0-1)
                     const xCenter = ((minX + maxX) / 2) / 100;
                     const yCenter = ((minY + maxY) / 2) / 100;
                     const width = (maxX - minX) / 100;
@@ -342,7 +339,6 @@ function ImageAnnotator({ imageUrl, imageId, imageName, datasetName, externalAnn
                 .filter(Boolean)
                 .join("\n");
               
-              // Получаем список всех классов для сохранения
               const allClassNames = classes.map((c) => c.name);
               
               await saveAnnotation(datasetName, imageId, yoloLines, allClassNames);
