@@ -298,3 +298,15 @@ export async function loadClassesFromBackend(datasetName) {
   }
 }
 
+export const performDatasetSplit = async (datasetName, { train_percent, test_percent, seed = 42 }) => {
+  const res = await fetch(`${API_BASE_URL}/api/datasets/${encodeURIComponent(datasetName)}/split`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ train_percent, test_percent, seed }),
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.detail || "Ошибка при выполнении сплита");
+  }
+  return await res.json();
+};

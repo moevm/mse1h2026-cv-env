@@ -4,6 +4,7 @@ import mimetypes
 import os
 import re
 import shutil
+import random
 from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -12,14 +13,14 @@ from urllib.parse import quote
 import yaml
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
 from core.paths import DATASETS_DIR
 from schemas.annotation_schema import SaveAnnotationRequest
 
-
 router = APIRouter(prefix="/api/datasets", tags=["Datasets"])
 
-IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".tif", ".tiff"}
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".tif", ".tiff", ".JPG", ".JPEG"}
 DEFAULT_TRAIN_PERCENT = 80
 
 
@@ -96,6 +97,7 @@ def _resolve_dataset_subpath(dataset_name: str, base_dir_name: str, nested_path:
 
     return str(resolved_path)
 
+
 def _load_uuid_mapping(dataset_dir: Path) -> dict:
     """Загружает маппинг UUID -> original_name, split."""
     mapping_file = dataset_dir / "uuid_mapping.json"
@@ -112,131 +114,117 @@ def _save_uuid_mapping(dataset_dir: Path, mapping: dict) -> None:
 
 
 def _collect_image_entries(dataset_name: str, dataset_dir: str) -> list[dict[str, Any]]:
-    """
-    Собирает информацию об изображениях в датасете.
-    Поддерживает два формата:
-    1. UUID-формат (с uuid_mapping.json) - изображения в папке images/
-    2. Legacy-формат (с train/val сплитами) - для обратной совместимости
-    """
+    """Сбор информации об изображениях – поддерживает плоскую структуру (images/) и split-папки (train/val/test)."""
     dataset_root = Path(dataset_dir)
-    
     uuid_mapping = _load_uuid_mapping(dataset_root)
-    
+    entries = []
+
     if uuid_mapping:
-        entries = []
-        images_dir = dataset_root / "images"
-        labels_dir = dataset_root / "labels"
-        
-        if not images_dir.exists():
-            return entries
-        
-        for image_file in images_dir.iterdir():
-            if not image_file.is_file() or image_file.suffix.lower() not in IMAGE_EXTENSIONS:
-                continue
-            
-            uid = image_file.stem 
-            
-            original_name = uuid_mapping.get(uid, {}).get("original_name", uid)
-            split = uuid_mapping.get(uid, {}).get("split")  # может быть None
-            
-            # Путь к файлу разметки
-            label_file = labels_dir / f"{uid}.txt"
-            annotation_text = _read_text_file(str(label_file)) if label_file.exists() else ""
-            
-            # Формируем путь для URL
-            stored_path = f"images/{image_file.name}"
-            
-            entries.append({
-                "name": uid, 
-                "originalName": original_name,
-                "relativePath": uid,
-                "storedPath": stored_path,
-                "split": split,
-                "url": f"/api/datasets/{quote(dataset_name)}/files/{_quote_path_parts(stored_path)}",
-                "annotationText": annotation_text,
-                "uuid": uid,
-            })
-        
-        # Сортируем по UUID для консистентности
+        # ---- НОВЫЙ UUID-ФОРМАТ ----
+        # Сначала проверяем, разложены ли файлы по сплитам
+        has_splits = any((dataset_root / split / "images").exists() for split in ["train", "val", "test"])
+        if has_splits:
+            for split_name in ("train", "val", "test"):
+                split_img_dir = dataset_root / split_name / "images"
+                split_lbl_dir = dataset_root / split_name / "labels"
+                if not split_img_dir.exists():
+                    continue
+                for img in split_img_dir.iterdir():
+                    if img.suffix.lower() not in IMAGE_EXTENSIONS:
+                        continue
+                    uid = img.stem
+                    orig = uuid_mapping.get(uid, {}).get("original_name", uid)
+                    lbl = split_lbl_dir / f"{uid}.txt"
+                    ann_txt = _read_text_file(str(lbl)) if lbl.exists() else ""
+                    stored = f"{split_name}/images/{img.name}"
+                    entries.append({
+                        "name": uid,
+                        "originalName": orig,
+                        "relativePath": uid,
+                        "storedPath": stored,
+                        "split": split_name,
+                        "url": f"/api/datasets/{quote(dataset_name)}/files/{_quote_path_parts(stored)}",
+                        "annotationText": ann_txt,
+                        "uuid": uid,
+                    })
+        else:
+            # Плоская структура – все файлы в images/ и labels/
+            img_dir = dataset_root / "images"
+            lbl_dir = dataset_root / "labels"
+            if img_dir.exists():
+                for img in img_dir.iterdir():
+                    if img.suffix.lower() not in IMAGE_EXTENSIONS:
+                        continue
+                    uid = img.stem
+                    orig = uuid_mapping.get(uid, {}).get("original_name", uid)
+                    split = uuid_mapping.get(uid, {}).get("split", None)
+                    lbl = lbl_dir / f"{uid}.txt"
+                    ann_txt = _read_text_file(str(lbl)) if lbl.exists() else ""
+                    stored = f"images/{img.name}"
+                    entries.append({
+                        "name": uid,
+                        "originalName": orig,
+                        "relativePath": uid,
+                        "storedPath": stored,
+                        "split": split,
+                        "url": f"/api/datasets/{quote(dataset_name)}/files/{_quote_path_parts(stored)}",
+                        "annotationText": ann_txt,
+                        "uuid": uid,
+                    })
         entries.sort(key=lambda x: x["name"])
         return entries
-    
-    collected: list[dict[str, Any]] = []
-    
+
+    # ---- LEGACY-ФОРМАТ (старый, без UUID) ----
     for split_name in ("train", "val"):
-        image_source = dataset_root / split_name / "images"
-        label_source = dataset_root / split_name / "labels"
-        if not image_source.is_dir():
+        img_dir = dataset_root / split_name / "images"
+        lbl_dir = dataset_root / split_name / "labels"
+        if not img_dir.is_dir():
             continue
-
-        for image_path in sorted(image_source.rglob("*"), key=lambda item: str(item).lower()):
-            if not image_path.is_file() or image_path.suffix.lower() not in IMAGE_EXTENSIONS:
+        for img in sorted(img_dir.rglob("*"), key=lambda p: str(p).lower()):
+            if not img.is_file() or img.suffix.lower() not in IMAGE_EXTENSIONS:
                 continue
+            rel = img.relative_to(img_dir).as_posix()
+            stored = img.relative_to(dataset_root).as_posix()
+            lbl = lbl_dir / rel.replace(img.suffix, ".txt")
+            ann_txt = _read_text_file(str(lbl)) if lbl.exists() else ""
+            entries.append({
+                "name": img.name,
+                "relativePath": rel,
+                "storedPath": stored,
+                "split": split_name,
+                "url": f"/api/datasets/{quote(dataset_name)}/files/{_quote_path_parts(stored)}",
+                "annotationText": ann_txt,
+            })
+    if entries:
+        return entries
 
-            relative_in_group = image_path.relative_to(image_source).as_posix()
-            stored_image_path = image_path.relative_to(dataset_root).as_posix()
-            label_path = (label_source / relative_in_group).with_suffix(".txt")
-            annotation_text = _read_text_file(str(label_path)) if label_path.is_file() else ""
-
-            collected.append(
-                {
-                    "name": image_path.name,
-                    "relativePath": relative_in_group,
-                    "storedPath": stored_image_path,
-                    "split": split_name,
-                    "url": f"/api/datasets/{quote(dataset_name)}/files/{_quote_path_parts(stored_image_path)}",
-                    "annotationText": annotation_text,
-                }
-            )
-
-    if collected:
-        return collected
-
-    # Backward-compatible layouts: images/train + labels/train OR flat images + labels
-    images_root = dataset_root / "images"
-    labels_root = dataset_root / "labels"
-    if not images_root.is_dir():
-        return []
-
-    has_split_dirs = any((images_root / split_name).is_dir() for split_name in ("train", "val"))
-    split_sources = (
-        [(split_name, images_root / split_name, labels_root / split_name) for split_name in ("train", "val")]
-        if has_split_dirs
-        else [(None, images_root, labels_root)]
-    )
-
-    for split_name, image_source, label_source in split_sources:
-        if not image_source.is_dir():
-            continue
-
-        for image_path in sorted(image_source.rglob("*"), key=lambda item: str(item).lower()):
-            if not image_path.is_file() or image_path.suffix.lower() not in IMAGE_EXTENSIONS:
+    # Fallback: flat images/ + labels/
+    img_root = dataset_root / "images"
+    lbl_root = dataset_root / "labels"
+    if img_root.is_dir():
+        for img in sorted(img_root.rglob("*"), key=lambda p: str(p).lower()):
+            if not img.is_file() or img.suffix.lower() not in IMAGE_EXTENSIONS:
                 continue
+            rel = img.relative_to(img_root).as_posix()
+            stored = img.relative_to(dataset_root).as_posix()
+            lbl = lbl_root / rel.replace(img.suffix, ".txt")
+            ann_txt = _read_text_file(str(lbl)) if lbl.exists() else ""
+            entries.append({
+                "name": img.name,
+                "relativePath": rel,
+                "storedPath": stored,
+                "split": None,
+                "url": f"/api/datasets/{quote(dataset_name)}/files/{_quote_path_parts(stored)}",
+                "annotationText": ann_txt,
+            })
+    return entries
 
-            relative_in_group = image_path.relative_to(image_source).as_posix()
-            stored_image_path = image_path.relative_to(dataset_root).as_posix()
-            label_path = (label_source / relative_in_group).with_suffix(".txt")
-            annotation_text = _read_text_file(str(label_path)) if label_path.is_file() else ""
-
-            collected.append(
-                {
-                    "name": image_path.name,
-                    "relativePath": relative_in_group,
-                    "storedPath": stored_image_path,
-                    "split": split_name,
-                    "url": f"/api/datasets/{quote(dataset_name)}/files/{_quote_path_parts(stored_image_path)}",
-                    "annotationText": annotation_text,
-                }
-            )
-
-    return collected
 
 def _clamp_train_percent(train_percent: int | float | None) -> int:
     try:
         numeric_value = int(round(float(train_percent if train_percent is not None else DEFAULT_TRAIN_PERCENT)))
     except (TypeError, ValueError):
         numeric_value = DEFAULT_TRAIN_PERCENT
-
     return max(1, min(99, numeric_value))
 
 
@@ -269,84 +257,65 @@ def _build_split_plan(items: list[dict[str, Any]], train_percent: int) -> list[d
 
 @router.get("")
 def list_datasets():
-    datasets: list[dict[str, Any]] = []
-
+    datasets = []
     if not os.path.isdir(DATASETS_DIR):
         return {"datasets": datasets}
 
-    for entry in sorted(os.scandir(DATASETS_DIR), key=lambda item: item.name.lower(), reverse=True):
+    for entry in sorted(os.scandir(DATASETS_DIR), key=lambda e: e.name.lower(), reverse=True):
         if not entry.is_dir():
             continue
+        name = entry.name
+        path = entry.path
+        images = _collect_image_entries(name, path)
+        created = datetime.fromtimestamp(Path(path).stat().st_mtime).isoformat()
+        train_cnt = sum(1 for i in images if i.get("split") == "train")
+        val_cnt = sum(1 for i in images if i.get("split") == "val")
+        test_cnt = sum(1 for i in images if i.get("split") == "test")
+        total_split = train_cnt + val_cnt + test_cnt
+        train_percent = _clamp_train_percent(round(train_cnt * 100 / total_split)) if total_split else DEFAULT_TRAIN_PERCENT
 
-        dataset_name = entry.name
-        dataset_dir = entry.path
-        images = _collect_image_entries(dataset_name, dataset_dir)
-        created_at = datetime.fromtimestamp(Path(dataset_dir).stat().st_mtime).isoformat()
-        train_count = sum(1 for image in images if image.get("split") == "train")
-        val_count = sum(1 for image in images if image.get("split") == "val")
-        total_split_images = train_count + val_count
-        train_percent = (
-            _clamp_train_percent(round(train_count * 100 / total_split_images))
-            if total_split_images
-            else DEFAULT_TRAIN_PERCENT
-        )
-
-        datasets.append(
-            {
-                "id": dataset_name,
-                "datasetName": dataset_name,
-                "datasetYamlPath": str(Path(dataset_dir) / "dataset.yaml"),
-                "name": dataset_name,
-                "date": created_at,
-                "imageCount": len(images),
-                "trainSplitPercent": train_percent,
-                "valSplitPercent": 100 - train_percent,
-                "images": images,
-            }
-        )
-
+        datasets.append({
+            "id": name,
+            "datasetName": name,
+            "datasetYamlPath": str(Path(path) / "dataset.yaml"),
+            "name": name,
+            "date": created,
+            "imageCount": len(images),
+            "trainSplitPercent": train_percent,
+            "valSplitPercent": 100 - train_percent,
+            "images": images,
+        })
     return {"datasets": datasets}
 
 
 @router.delete("/{dataset_name}")
 def delete_dataset(dataset_name: str):
-    safe_dataset_name = _sanitize_dataset_name(dataset_name)
-    dataset_dir = os.path.join(DATASETS_DIR, safe_dataset_name)
-
-    if not os.path.isdir(dataset_dir):
+    safe = _sanitize_dataset_name(dataset_name)
+    path = os.path.join(DATASETS_DIR, safe)
+    if not os.path.isdir(path):
         raise HTTPException(status_code=404, detail="Коллекция не найдена")
-
-    shutil.rmtree(dataset_dir)
-    return {"status": "success", "dataset_name": safe_dataset_name}
+    shutil.rmtree(path)
+    return {"status": "success", "dataset_name": safe}
 
 
 @router.get("/{dataset_name}/yaml-path")
 def get_config(dataset_name: str):
-    safe_dataset_name = _sanitize_dataset_name(dataset_name)
-    dataset_dir = os.path.join(DATASETS_DIR, safe_dataset_name)
-    
-    if not os.path.isdir(dataset_dir):
+    safe = _sanitize_dataset_name(dataset_name)
+    path = os.path.join(DATASETS_DIR, safe)
+    if not os.path.isdir(path):
         raise HTTPException(status_code=404, detail="Датасет не найден")
-    
-    yaml_path = os.path.join(dataset_dir, "dataset.yaml")
-    
+    yaml_path = os.path.join(path, "dataset.yaml")
     if not os.path.isfile(yaml_path):
         raise HTTPException(status_code=404, detail="Файл dataset.yaml не найден")
-    
-    return {
-        "dataset_name": safe_dataset_name,
-        "yaml_path": yaml_path,
-        "exists": True
-    }
+    return {"dataset_name": safe, "yaml_path": yaml_path, "exists": True}
+
 
 @router.get("/{dataset_name}/files/{file_path:path}")
 def get_dataset_file(dataset_name: str, file_path: str):
-    file_path = _resolve_dataset_subpath(dataset_name, "", file_path)
-
-    if not os.path.isfile(file_path):
-        raise HTTPException(status_code=404, detail="Изображение не найдено")
-
-    return FileResponse(file_path, media_type=_detect_media_type(file_path), filename=Path(file_path).name)
+    abs_path = _resolve_dataset_subpath(dataset_name, "", file_path)
+    if not os.path.isfile(abs_path):
+        raise HTTPException(status_code=404, detail="Файл не найден")
+    return FileResponse(abs_path, media_type=_detect_media_type(abs_path), filename=Path(abs_path).name)
 
 
 @router.post("/export")
@@ -356,104 +325,75 @@ async def export_dataset(
     files: list[UploadFile] = File(...),
 ):
     try:
-        metadata = json.loads(metadata_json)
+        meta = json.loads(metadata_json)
     except json.JSONDecodeError as exc:
-        raise HTTPException(status_code=400, detail=f"Некорректный metadata_json: {exc}") from exc
-
-    classes = metadata.get("classes") or []
-    items = metadata.get("items") or []
-    train_percent = _clamp_train_percent(metadata.get("trainPercent"))
-
-    if not isinstance(classes, list) or not all(isinstance(item, str) for item in classes):
-        raise HTTPException(status_code=400, detail="Поле classes должно быть списком строк")
-
-    if not isinstance(items, list) or not items:
-        raise HTTPException(status_code=400, detail="Нет данных для экспорта")
-
+        raise HTTPException(400, f"Некорректный JSON: {exc}")
+    classes = meta.get("classes", [])
+    items = meta.get("items", [])
+    train_percent = _clamp_train_percent(meta.get("trainPercent"))
+    if not isinstance(classes, list) or not all(isinstance(c, str) for c in classes):
+        raise HTTPException(400, "classes должен быть списком строк")
+    if not items:
+        raise HTTPException(400, "Нет данных для экспорта")
     dataset_name = _sanitize_dataset_name(collection_name)
     dataset_dir = os.path.join(DATASETS_DIR, dataset_name)
-    dataset_abs_path = os.path.abspath(dataset_dir)
-
+    dataset_abs = os.path.abspath(dataset_dir)
     if os.path.isdir(dataset_dir):
         shutil.rmtree(dataset_dir)
-
     os.makedirs(dataset_dir, exist_ok=True)
-    dataset_root = Path(dataset_dir)
+    root = Path(dataset_dir)
     split_dirs = {
-        split_name: {
-            "images": dataset_root / split_name / "images",
-            "labels": dataset_root / split_name / "labels",
-        }
-        for split_name in ("train", "val")
+        s: {"images": root / s / "images", "labels": root / s / "labels"} for s in ("train", "val")
     }
     for paths in split_dirs.values():
         paths["images"].mkdir(parents=True, exist_ok=True)
         paths["labels"].mkdir(parents=True, exist_ok=True)
 
-    split_plan = _build_split_plan(items, train_percent)
-
+    plan = _build_split_plan(items, train_percent)
+    saved = 0
+    counts = {"train": 0, "val": 0}
     try:
-        images_saved = 0
-        split_counts = {"train": 0, "val": 0}
-
-        for item in split_plan:
-            upload_index = item.get("uploadIndex")
-            if not isinstance(upload_index, int) or upload_index < 0 or upload_index >= len(files):
-                raise HTTPException(status_code=400, detail="Некорректный uploadIndex в metadata")
-
-            upload = files[upload_index]
-            relative_path = item["normalizedRelativePath"]
-            split_name = item["split"]
-            annotation_txt = (item.get("annotationTxt") or "").strip()
-
-            image_path = (split_dirs[split_name]["images"] / relative_path).resolve()
-            label_path = (split_dirs[split_name]["labels"] / relative_path).with_suffix(".txt").resolve()
-            image_path.parent.mkdir(parents=True, exist_ok=True)
-            label_path.parent.mkdir(parents=True, exist_ok=True)
-
-            file_bytes = await upload.read()
-            with open(image_path, "wb") as image_file:
-                image_file.write(file_bytes)
-
-            with open(label_path, "w", encoding="utf-8") as label_file:
-                label_file.write(annotation_txt)
-                if annotation_txt:
-                    label_file.write("\n")
-
-            images_saved += 1
-            split_counts[split_name] += 1
-
-        _write_dataset_yaml(
-            os.path.join(dataset_dir, "dataset.yaml"),
-            classes,
-            dataset_abs_path,
-        )
-
-        with open(os.path.join(dataset_dir, "classes.txt"), "w", encoding="utf-8") as classes_file:
-            classes_file.write("\n".join(classes))
-            if classes:
-                classes_file.write("\n")
-
+        for item in plan:
+            idx = item.get("uploadIndex")
+            if not isinstance(idx, int) or idx < 0 or idx >= len(files):
+                raise HTTPException(400, "Некорректный uploadIndex")
+            up = files[idx]
+            rel = item["normalizedRelativePath"]
+            split = item["split"]
+            ann = (item.get("annotationTxt") or "").strip()
+            img_path = split_dirs[split]["images"] / rel
+            lbl_path = split_dirs[split]["labels"] / rel.replace(img_path.suffix, ".txt")
+            img_path.parent.mkdir(parents=True, exist_ok=True)
+            lbl_path.parent.mkdir(parents=True, exist_ok=True)
+            data = await up.read()
+            with open(img_path, "wb") as f:
+                f.write(data)
+            with open(lbl_path, "w", encoding="utf-8") as f:
+                f.write(ann)
+                if ann: f.write("\n")
+            saved += 1
+            counts[split] += 1
+        _write_dataset_yaml(os.path.join(dataset_dir, "dataset.yaml"), classes, dataset_abs)
+        with open(os.path.join(dataset_dir, "classes.txt"), "w", encoding="utf-8") as f:
+            f.write("\n".join(classes) + ("\n" if classes else ""))
         return {
             "status": "success",
             "dataset_name": dataset_name,
             "dataset_path": dataset_dir,
-            "dataset_abs_path": dataset_abs_path,
+            "dataset_abs_path": dataset_abs,
             "dataset_yaml_path": os.path.join(dataset_dir, "dataset.yaml"),
-            "images_saved": images_saved,
+            "images_saved": saved,
             "classes_saved": len(classes),
             "train_percent": train_percent,
             "val_percent": 100 - train_percent,
-            "split_counts": split_counts,
+            "split_counts": counts,
         }
     except HTTPException:
-        if os.path.isdir(dataset_dir):
-            shutil.rmtree(dataset_dir, ignore_errors=True)
+        if os.path.isdir(dataset_dir): shutil.rmtree(dataset_dir, ignore_errors=True)
         raise
-    except Exception as exc:
-        if os.path.isdir(dataset_dir):
-            shutil.rmtree(dataset_dir, ignore_errors=True)
-        raise HTTPException(status_code=500, detail=f"Не удалось экспортировать датасет: {exc}") from exc
+    except Exception as e:
+        if os.path.isdir(dataset_dir): shutil.rmtree(dataset_dir, ignore_errors=True)
+        raise HTTPException(500, f"Ошибка экспорта: {e}")
 
 
 @router.post("/upload-raw")
@@ -461,154 +401,227 @@ async def upload_raw_dataset(
     dataset_name: str = Form(...),
     files: list[UploadFile] = File(...),
 ):
-    """Загрузка датасета с UUID-именами. Без сплита. Все файлы в images/ и labels/."""
-    
-    safe_name = _sanitize_dataset_name(dataset_name)
-    dataset_dir = Path(DATASETS_DIR) / safe_name
-    
+    safe = _sanitize_dataset_name(dataset_name)
+    dataset_dir = Path(DATASETS_DIR) / safe
     if dataset_dir.exists():
-        raise HTTPException(status_code=400, detail="Датасет уже существует")
-    
+        raise HTTPException(400, "Датасет уже существует")
     dataset_dir.mkdir(parents=True)
     images_dir = dataset_dir / "images"
     labels_dir = dataset_dir / "labels"
     images_dir.mkdir()
     labels_dir.mkdir()
-    
     images_by_stem = {}
     labels_by_stem = {}
-    
-    for file in files:
-        stem = Path(file.filename).stem.lower()
-        ext = Path(file.filename).suffix.lower()
-        
+    for f in files:
+        stem = Path(f.filename).stem.lower()
+        ext = Path(f.filename).suffix.lower()
         if ext in IMAGE_EXTENSIONS:
-            images_by_stem[stem] = file
+            images_by_stem[stem] = f
         elif ext == ".txt":
-            labels_by_stem[stem] = file
-    
-    uuid_mapping = {}
-    
-    for stem, image_file in images_by_stem.items():
+            labels_by_stem[stem] = f
+    mapping = {}
+    for stem, img_file in images_by_stem.items():
         uid = str(uuid.uuid4())
-        ext = Path(image_file.filename).suffix.lower()
-        
-        # Сохраняем изображение
-        image_path = images_dir / f"{uid}{ext}"
-        content = await image_file.read()
-        with open(image_path, "wb") as f:
+        ext = Path(img_file.filename).suffix.lower()
+        if ext not in IMAGE_EXTENSIONS:
+            ext = ".jpg"
+        img_path = images_dir / f"{uid}{ext}"
+        content = await img_file.read()
+        with open(img_path, "wb") as f:
             f.write(content)
-        
-        # Сохраняем разметку (если есть)
-        label_path = labels_dir / f"{uid}.txt"
+        lbl_path = labels_dir / f"{uid}.txt"
         if stem in labels_by_stem:
             label_content = await labels_by_stem[stem].read()
-            with open(label_path, "wb") as f:
+            with open(lbl_path, "wb") as f:
                 f.write(label_content)
         else:
-            label_path.write_text("", encoding="utf-8")  # пустой txt
-        
-        uuid_mapping[uid] = {
-            "original_name": image_file.filename,
-            "split": None,  # пока нет сплита
-        }
-    
-    # Сохраняем маппинг
-    with open(dataset_dir / "uuid_mapping.json", "w") as f:
-        json.dump(uuid_mapping, f, indent=2)
-    
+            lbl_path.write_text("", encoding="utf-8")
+        mapping[uid] = {"original_name": img_file.filename, "split": None, "extension": ext}
+    _save_uuid_mapping(dataset_dir, mapping)
+    return {"status": "success", "dataset_id": safe, "images_count": len(mapping)}
+
+
+# ---------- SPLIT ENDPOINT (с поддержкой train/val/test) ----------
+class SplitRequest(BaseModel):
+    train_percent: float
+    test_percent: float
+    seed: int = 42
+
+@router.post("/{dataset_name}/split")
+async def apply_split(
+    dataset_name: str,
+    request: SplitRequest,
+):
+    safe = _sanitize_dataset_name(dataset_name)
+    dataset_dir = Path(DATASETS_DIR) / safe
+    if not dataset_dir.exists():
+        raise HTTPException(404, "Датасет не найден")
+
+    mapping = _load_uuid_mapping(dataset_dir)
+    if not mapping:
+        raise HTTPException(400, "Маппинг UUID не найден")
+
+    uuids = list(mapping.keys())
+    if not uuids:
+        raise HTTPException(400, "Нет изображений")
+
+    train_pct = max(0, min(100, request.train_percent))
+    test_pct = max(0, min(100, request.test_percent))
+    val_pct = 100 - train_pct - test_pct
+    if val_pct < 0:
+        raise HTTPException(400, "Сумма процентов превышает 100")
+
+    sorted_uuids = sorted(uuids)
+    random.seed(request.seed)
+    random.shuffle(sorted_uuids)
+
+    n = len(sorted_uuids)
+    train_cnt = int(round(n * train_pct / 100))
+    test_cnt = int(round(n * test_pct / 100))
+    val_cnt = n - train_cnt - test_cnt
+
+    # подстраховка при малых числах
+    if train_cnt == 0:
+        train_cnt = 1
+        if val_cnt > 0: val_cnt -= 1
+        else: test_cnt -= 1
+    if test_cnt < 0: test_cnt = 0
+    if val_cnt < 0: val_cnt = 0
+
+    train_uuids = set(sorted_uuids[:train_cnt])
+    val_uuids = set(sorted_uuids[train_cnt:train_cnt + val_cnt])
+    test_uuids = set(sorted_uuids[train_cnt + val_cnt:])
+
+    # создаём директории
+    for split in ("train", "val", "test"):
+        (dataset_dir / split / "images").mkdir(parents=True, exist_ok=True)
+        (dataset_dir / split / "labels").mkdir(parents=True, exist_ok=True)
+
+    # перемещаем файлы
+    for uid, data in mapping.items():
+        ext = data.get("extension", ".jpg")
+        src_img = dataset_dir / "images" / f"{uid}{ext}"
+        src_txt = dataset_dir / "labels" / f"{uid}.txt"
+        if uid in train_uuids:
+            dest = "train"
+        elif uid in val_uuids:
+            dest = "val"
+        elif uid in test_uuids:
+            dest = "test"
+        else:
+            continue
+        dst_img = dataset_dir / dest / "images" / f"{uid}{ext}"
+        dst_txt = dataset_dir / dest / "labels" / f"{uid}.txt"
+        if src_img.exists():
+            shutil.move(str(src_img), str(dst_img))
+        if src_txt.exists():
+            shutil.move(str(src_txt), str(dst_txt))
+        data["split"] = dest
+
+    _save_uuid_mapping(dataset_dir, mapping)
+
+    # удаляем старые папки, если пустые
+    for folder in ("images", "labels"):
+        fdir = dataset_dir / folder
+        if fdir.exists() and not any(fdir.iterdir()):
+            shutil.rmtree(fdir, ignore_errors=True)
+
+    # обновляем dataset.yaml
+    classes_file = dataset_dir / "classes.txt"
+    if classes_file.exists():
+        with open(classes_file, "r", encoding="utf-8") as f:
+            classes = [line.strip() for line in f if line.strip()]
+        _write_dataset_yaml(str(dataset_dir / "dataset.yaml"), classes, str(dataset_dir.resolve()))
+
     return {
         "status": "success",
-        "dataset_id": safe_name,
-        "images_count": len(uuid_mapping)
+        "train_count": len(train_uuids),
+        "val_count": len(val_uuids),
+        "test_count": len(test_uuids),
+        "seed": request.seed,
     }
 
 
+# ---------- ANNOTATION ENDPOINTS (сохраняем в нужную папку) ----------
 @router.post("/{dataset_name}/annotations/class")
 async def add_annotation_class(dataset_name: str, class_name: str):
-    """Добавляет новый класс в classes.txt датасета."""
-    safe_name = _sanitize_dataset_name(dataset_name)
-    dataset_dir = Path(DATASETS_DIR) / safe_name
-    
+    safe = _sanitize_dataset_name(dataset_name)
+    dataset_dir = Path(DATASETS_DIR) / safe
     if not dataset_dir.exists():
-        raise HTTPException(status_code=404, detail="Датасет не найден")
-    
+        raise HTTPException(404, "Датасет не найден")
     classes_file = dataset_dir / "classes.txt"
-    
-    existing_classes = []
+    existing = []
     if classes_file.exists():
-        existing_classes = [line.strip() for line in classes_file.read_text(encoding="utf-8").split("\n") if line.strip()]
-    
-    if class_name.strip() not in existing_classes:
-        existing_classes.append(class_name.strip())
-        classes_file.write_text("\n".join(existing_classes) + "\n", encoding="utf-8")
-    
-    dataset_yaml = dataset_dir / "dataset.yaml"
-    if dataset_yaml.exists():
-        _write_dataset_yaml(str(dataset_yaml), existing_classes, str(dataset_dir.resolve()))
-    
+        existing = [line.strip() for line in classes_file.read_text(encoding="utf-8").split("\n") if line.strip()]
+    if class_name.strip() not in existing:
+        existing.append(class_name.strip())
+        classes_file.write_text("\n".join(existing) + "\n", encoding="utf-8")
+        _write_dataset_yaml(str(dataset_dir / "dataset.yaml"), existing, str(dataset_dir.resolve()))
     return {
         "status": "success",
         "class_name": class_name.strip(),
-        "class_index": existing_classes.index(class_name.strip()),
-        "all_classes": existing_classes,
+        "class_index": existing.index(class_name.strip()),
+        "all_classes": existing,
     }
 
 
 @router.post("/{dataset_name}/annotations/save")
 async def save_annotation(dataset_name: str, request: SaveAnnotationRequest):
-    """Сохраняет разметку для изображения в txt файл."""
-    safe_name = _sanitize_dataset_name(dataset_name)
-    dataset_dir = Path(DATASETS_DIR) / safe_name
-    
+    safe = _sanitize_dataset_name(dataset_name)
+    dataset_dir = Path(DATASETS_DIR) / safe
     if not dataset_dir.exists():
-        raise HTTPException(status_code=404, detail="Датасет не найден")
-    
-    image_uuid = request.image_uuid
-    annotation_content = request.content
-    classes = request.classes or []
-    
-    # Ищем где находится файл разметки (может быть в images/labels или train/val/labels)
-    labels_dir = dataset_dir / "labels"
-    
-    if not labels_dir.exists():
-        for split in ["train", "val", "test"]:
-            potential_labels = dataset_dir / split / "labels"
-            if potential_labels.exists():
-                labels_dir = potential_labels
-                break
-    
-    if not labels_dir.exists():
+        raise HTTPException(404, "Датасет не найден")
+    # Определяем, где лежат labels (сплит или flat)
+    mapping = _load_uuid_mapping(dataset_dir)
+    split_for_uuid = mapping.get(request.image_uuid, {}).get("split") if mapping else None
+    if split_for_uuid:
+        labels_dir = dataset_dir / split_for_uuid / "labels"
+    else:
         labels_dir = dataset_dir / "labels"
-        labels_dir.mkdir(parents=True, exist_ok=True)
-    
-    label_file = labels_dir / f"{image_uuid}.txt"
-    label_file.write_text(annotation_content, encoding="utf-8")
-    
-    if classes:
+        if not labels_dir.exists():
+            labels_dir.mkdir(parents=True, exist_ok=True)
+    label_file = labels_dir / f"{request.image_uuid}.txt"
+    label_file.write_text(request.content, encoding="utf-8")
+    # обновляем classes.txt, если переданы новые классы
+    if request.classes:
         classes_file = dataset_dir / "classes.txt"
-        
-        existing_classes = []
+        existing = []
         if classes_file.exists():
-            existing_classes = [line.strip() for line in classes_file.read_text(encoding="utf-8").split("\n") if line.strip()]
-        
+            existing = [line.strip() for line in classes_file.read_text(encoding="utf-8").split("\n") if line.strip()]
         updated = False
-        for class_name in classes:
-            if class_name.strip() not in existing_classes:
-                existing_classes.append(class_name.strip())
+        for cls in request.classes:
+            if cls.strip() and cls.strip() not in existing:
+                existing.append(cls.strip())
                 updated = True
-        
         if updated:
-            classes_file.write_text("\n".join(existing_classes) + "\n", encoding="utf-8")
-            
-            dataset_yaml = dataset_dir / "dataset.yaml"
-            if dataset_yaml.exists():
-                _write_dataset_yaml(str(dataset_yaml), existing_classes, str(dataset_dir.resolve()))
-    
-    return {
-        "status": "success",
-        "image_uuid": image_uuid,
-        "label_path": str(label_file.relative_to(dataset_dir)),
-        "classes_updated": len(classes) > 0,
-    }
+            classes_file.write_text("\n".join(existing) + "\n", encoding="utf-8")
+            _write_dataset_yaml(str(dataset_dir / "dataset.yaml"), existing, str(dataset_dir.resolve()))
+    return {"status": "success", "image_uuid": request.image_uuid}
 
+
+@router.get("/{dataset_name}/annotations/{image_uuid}")
+async def get_annotation(dataset_name: str, image_uuid: str):
+    safe = _sanitize_dataset_name(dataset_name)
+    dataset_dir = Path(DATASETS_DIR) / safe
+    # ищем файл в возможных местах
+    candidates = [
+        dataset_dir / "labels" / f"{image_uuid}.txt",
+        dataset_dir / "train" / "labels" / f"{image_uuid}.txt",
+        dataset_dir / "val" / "labels" / f"{image_uuid}.txt",
+        dataset_dir / "test" / "labels" / f"{image_uuid}.txt",
+    ]
+    for cand in candidates:
+        if cand.exists():
+            return {"content": cand.read_text(encoding="utf-8"), "exists": True}
+    return {"content": "", "exists": False}
+
+
+@router.get("/{dataset_name}/classes")
+async def get_classes(dataset_name: str):
+    safe = _sanitize_dataset_name(dataset_name)
+    dataset_dir = Path(DATASETS_DIR) / safe
+    classes_file = dataset_dir / "classes.txt"
+    if classes_file.exists():
+        classes = [line.strip() for line in classes_file.read_text(encoding="utf-8").split("\n") if line.strip()]
+        return {"classes": classes}
+    return {"classes": []}
