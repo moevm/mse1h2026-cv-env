@@ -178,7 +178,7 @@ function ImageViewer({
           <ImageAnnotator
             imageUrl={currentUrl}
             imageId={image.uuid || image.relativePath || image.id}
-            imageName={image.originalName || image.name}
+            imageName={image.name || image.originalName}
             datasetName={collection?.name}
             externalAnnotations={txtAnnotations}
             onClose={onClose}
