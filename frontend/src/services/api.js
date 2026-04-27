@@ -1,4 +1,4 @@
-const API_BASE_URL = "http://localhost:8000";
+export const API_BASE_URL = "http://localhost:8000";
 
 // Augmentation
 export const getAugmentations = async () => {
@@ -174,6 +174,59 @@ export const getDataset = async (datasetName) => {
   if (!res.ok) {
     const error = await res.json().catch(() => ({}));
     throw new Error(error.detail || "Ошибка получения пути к dataset.yaml");
+  }
+  return await res.json();
+};
+
+// ----- Experiments API -----
+export const getExperiments = async (sortBy = 'map50', order = 'desc') => {
+  const res = await fetch(`${API_BASE_URL}/api/experiments?sort_by=${sortBy}&order=${order}`);
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.detail || "Ошибка загрузки списка экспериментов");
+  }
+  return await res.json();
+};
+
+export const runExperiment = async (data) => {
+  const res = await fetch(`${API_BASE_URL}/api/experiments/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.detail || "Ошибка запуска эксперимента");
+  }
+  return await res.json();
+};
+
+export const compareExperiments = async (expIds) => {
+  console.log('Sending POST to', `${API_BASE_URL}/api/experiments/compare`, expIds);
+  const res = await fetch(`${API_BASE_URL}/api/experiments/compare`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(expIds),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return await res.json();
+};
+
+export const getAvailableModels = async () => {
+  const res = await fetch(`${API_BASE_URL}/api/experiments/models`);
+  if (!res.ok) {
+    throw new Error("Ошибка загрузки списка моделей");
+  }
+  return await res.json();
+};
+
+export const deleteExperiment = async (expId) => {
+  const res = await fetch(`${API_BASE_URL}/api/experiments/${expId}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.detail || "Ошибка удаления эксперимента");
   }
   return await res.json();
 };
