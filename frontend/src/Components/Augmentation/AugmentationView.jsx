@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import useObjectUrl from "../../hooks/useObjectUrl";
+import { getDisabledFolderPaths } from "../../utils/fileSystem";
 import { getAugmentations, saveAugmentations } from "../../services/api";
 import "../../styles/AugmentationView.css";
 
@@ -25,13 +26,25 @@ function AugmentationView({ collection, versions, currentVersionId }) {
   });
 
   const currentVersion = versions.find((v) => v.id === currentVersionId);
-  const images = currentVersion?.images || collection?.images || [];
+
+  const ignoredPaths = useMemo(() => {
+    return collection?.folders ? getDisabledFolderPaths(collection.folders) : [];
+  }, [collection?.folders]);
+
+  const images = useMemo(() => {
+    const baseImages = currentVersion?.images || collection?.images || [];
+    if (ignoredPaths.length === 0) return baseImages;
+
+    return baseImages.filter(img => {
+      return !ignoredPaths.some(ignoredPath => img.relativePath.startsWith(ignoredPath + '/'));
+    });
+  }, [collection?.images, currentVersion?.images, ignoredPaths]);
 
   const originalUrl = useObjectUrl(originalImage?.file);
   const augmentedUrl = useObjectUrl(augmentedImage?.file);
 
   useEffect(() => {
-    getAugmentations()
+    getAugmentations(collection.workspacePath)
       .then(setParams)
       .catch(() => console.log("Используются дефолтные параметры"));
   }, []);
@@ -119,7 +132,7 @@ const getAugmentationStyle = (params) => {
 };
   const handleApply = async () => {
     try {
-      await saveAugmentations(params);
+      await saveAugmentations(params, collection.workspacePath);
       alert("Сохранено в YAML ");
     } catch (e) {
       console.error(e);
