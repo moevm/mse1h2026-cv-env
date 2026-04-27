@@ -1,8 +1,28 @@
 import { useCallback, useEffect, useState } from "react";
-import { getAllFilesFromDirectory } from "../utils/fileSystem";
+import { getAllFilesFromDirectory, buildFolderTree } from "../utils/fileSystem";
+import { saveCollections, loadCollections } from "../utils/persistence";
 import { deleteStoredDataset, getStoredDatasets } from "../services/api";
 
 const DEFAULT_TRAIN_SPLIT_PERCENT = 80;
+
+function mergeTrees(oldNodes = [], newNodes = []) {
+  return newNodes.map(newNode => {
+    const oldNode = oldNodes.find(n => n.path === newNode.path);
+    
+    if (oldNode) {
+      return {
+        ...newNode,
+        isEnabled: oldNode.isEnabled,
+        children: mergeTrees(oldNode.children, newNode.children)
+      };
+    }
+    
+    return {
+      ...newNode,
+      isEnabled: true, 
+    };
+  });
+}
 
 function buildImagesWithAnnotations(files) {
   const allFiles = Array.from(files);
@@ -47,96 +67,79 @@ function buildImagesWithAnnotations(files) {
   });
 }
 
-function buildStoredCollection(dataset) {
-  const images = Array.isArray(dataset.images)
-    ? dataset.images.map((image) => ({
-        file: null,
-        url: image.url ? `http://localhost:8000${image.url}` : null,
-        name: image.name,
-        type: "image/*",
-        size: null,
-        relativePath: image.relativePath || image.name,
-        storedPath: image.storedPath || null,
-        split: image.split || null,
-        annotationFile: null,
-        annotationText: image.annotationText || "",
-      }))
-    : [];
-
-  const trainSplitPercent = Number.isFinite(dataset.trainSplitPercent)
-    ? dataset.trainSplitPercent
-    : DEFAULT_TRAIN_SPLIT_PERCENT;
-
-  return {
-    id: dataset.id || dataset.datasetName || dataset.name,
-    datasetName: dataset.datasetName || dataset.id || dataset.name,
-    datasetYamlPath: dataset.datasetYamlPath || null,
-    name: dataset.name || dataset.datasetName || "Коллекция",
-    date: dataset.date || new Date().toISOString(),
-    images,
-    imageCount: typeof dataset.imageCount === "number" ? dataset.imageCount : images.length,
-    directoryHandle: null,
-    persisted: true,
-    trainSplitPercent,
-    valSplitPercent: Number.isFinite(dataset.valSplitPercent)
-      ? dataset.valSplitPercent
-      : 100 - trainSplitPercent,
-  };
-}
-
 function useCollections() {
   const [collections, setCollections] = useState([]);
   const [isLoadingCollections, setIsLoadingCollections] = useState(true);
 
-  const loadStoredCollections = useCallback(async () => {
-    setIsLoadingCollections(true);
-    try {
-      const response = await getStoredDatasets();
-      const restored = Array.isArray(response.datasets)
-        ? response.datasets.map(buildStoredCollection)
-        : [];
-      setCollections((prev) => {
-        const localOnly = prev.filter((collection) => !collection.persisted);
-        return [...localOnly, ...restored];
-      });
-    } catch (error) {
-      console.error("Не удалось загрузить сохранённые коллекции:", error);
-    } finally {
+  useEffect(() => {
+    loadCollections().then(saved => {
+      setCollections(saved || []);
       setIsLoadingCollections(false);
-    }
+    }).catch(err => {
+      console.error("Ошибка загрузки из IndexedDB:", err);
+      setIsLoadingCollections(false);
+    });
   }, []);
 
   useEffect(() => {
-    loadStoredCollections();
-  }, [loadStoredCollections]);
+    if (!isLoadingCollections) {
+      saveCollections(collections);
+    }
+  }, [collections, isLoadingCollections]);
 
-  const addCollection = (files, collectionName, directoryHandle) => {
-    const images = buildImagesWithAnnotations(files);
-
+  const addCollection = (projectName, workspacePath) => {
     const newCollection = {
       id: Date.now().toString(),
-      name: collectionName || `Коллекция от ${new Date().toLocaleString()}`,
+      name: projectName,
+      workspacePath: workspacePath,
       date: new Date().toISOString(),
-      images,
-      imageCount: images.length,
-      directoryHandle,
-      persisted: false,
-      trainSplitPercent: DEFAULT_TRAIN_SPLIT_PERCENT,
-      valSplitPercent: 100 - DEFAULT_TRAIN_SPLIT_PERCENT,
+      images: [],
+      folders: [],
+      imageCount: 0
     };
-
-    setCollections((prev) => [newCollection, ...prev]);
+    setCollections(prev => [...prev, newCollection]);
     return newCollection.id;
+  };
+
+  const requestFolderAccess = async (folderNode) => {
+    try {
+      if (await folderNode.handle.queryPermission({ mode: 'read' }) === 'granted') return true;
+      return await folderNode.handle.requestPermission({ mode: 'read' }) === 'granted';
+    } catch (e) {
+      console.error("Доступ к папке отклонен", e);
+      return false;
+    }
+  };
+
+  const toggleFolderState = (collectionId, targetPath, isEnabled) => {
+    setCollections((prev) => prev.map((col) => {
+      if (col.id !== collectionId) return col;
+
+      const updateNode = (nodes) => nodes.map((node) => {
+        if (node.path === targetPath) {
+          const setChildrenState = (children) => children.map((c) => ({ 
+            ...c, isEnabled, children: setChildrenState(c.children) 
+          }));
+          return { ...node, isEnabled, children: setChildrenState(node.children) };
+        }
+        if (node.children?.length) {
+          return { ...node, children: updateNode(node.children) };
+        }
+        return node;
+      });
+
+      return { ...col, folders: updateNode(col.folders || []) };
+    }));
   };
 
   const removeCollection = async (collectionId) => {
     const collection = collections.find((c) => c.id === collectionId);
-    if (!collection) {
-      return false;
-    }
+    if (!collection) return false;
 
-    if (collection.persisted) {
-      await deleteStoredDataset(collection.datasetName || collection.id);
+    try {
+      await deleteStoredDataset(collection.name, collection.workspacePath);
+    } catch (e) {
+      console.warn("Папка на бэкенде не найдена или уже удалена", e);
     }
 
     setCollections((prev) => prev.filter((c) => c.id !== collectionId));
@@ -155,31 +158,52 @@ function useCollections() {
 
   const syncCollection = async (collectionId) => {
     const collection = collections.find((c) => c.id === collectionId);
-    if (!collection || !collection.directoryHandle) {
-      throw new Error("No directory handle for this collection");
+    if (!collection || !collection.folders) return;
+
+    let allUpdatedFiles = [];
+    const updatedFolders = [];
+
+    for (const folderNode of collection.folders) {
+      const hasAccess = await requestFolderAccess(folderNode);
+      if (!hasAccess) {
+        updatedFolders.push(folderNode);
+        continue;
+      }
+
+      const freshFiles = await getAllFilesFromDirectory(folderNode.handle, folderNode.path);
+      
+      const freshTree = await buildFolderTree(folderNode.handle, folderNode.path);
+      
+      const mergedChildren = mergeTrees(folderNode.children || [], freshTree || []);
+
+      allUpdatedFiles.push(...freshFiles);
+      updatedFolders.push({
+        ...folderNode,
+        children: mergedChildren
+      });
     }
 
-    const allFiles = await getAllFilesFromDirectory(collection.directoryHandle);
-    const images = buildImagesWithAnnotations(allFiles);
+    const images = buildImagesWithAnnotations(allUpdatedFiles);
 
     setCollections((prev) =>
       prev.map((c) =>
-        c.id === collectionId ? { ...c, images, imageCount: images.length } : c,
+        c.id === collectionId 
+          ? { ...c, images, imageCount: images.length, folders: updatedFolders } 
+          : c
       ),
     );
-
-    return images;
   };
 
   return {
     collections,
     isLoadingCollections,
-    loadStoredCollections,
     addCollection,
     removeCollection,
-    getCollection,
     updateCollection,
+    requestFolderAccess,
+    getCollection,
     syncCollection,
+    toggleFolderState,
   };
 }
 
