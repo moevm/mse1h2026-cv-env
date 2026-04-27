@@ -6,7 +6,7 @@ import json
 from datetime import datetime
 from typing import Dict, Optional, List
 from ultralytics import YOLO
-from core.paths import EXPERIMENTS_DIR
+from core.paths import TRAINING_DIR
 from schemas.training_schema import TrainingRequestSchema, TrainingStatusSchema
 import torch
 
@@ -242,7 +242,7 @@ def run_real_training(task_id: str, request: TrainingRequestSchema):
             'warmup_epochs': request.warmup_epochs,
             'warmup_momentum': request.warmup_momentum,
             'warmup_bias_lr': request.warmup_bias_lr,
-            'project': EXPERIMENTS_DIR,
+            'project': TRAINING_DIR,
             'name': task_id,
             'exist_ok': True,
             'verbose': True,
