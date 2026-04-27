@@ -1,6 +1,7 @@
 from fastapi import FastAPI
-from core.paths import ensure_directories
-from api import dataset_router, augmentation_router, training_router
+from fastapi.staticfiles import StaticFiles
+from core.paths import ensure_directories, STATIC_DIR
+from api import dataset_router, augmentation_router, training_router, experiments_router
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
 from contextlib import asynccontextmanager
@@ -28,7 +29,7 @@ async def lifespan(app: FastAPI):
     
     print("[SHUTDOWN] All trainings stopped")
 
-app = FastAPI()
+app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -36,9 +37,17 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
+
+# Создаём все необходимые папки (включая STATIC_DIR)
 ensure_directories()
 
+# Монтируем статику (чтоб файлы из папки static были доступны по URL /static/...)
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+# Подключаем роутеры
 app.include_router(dataset_router.router)
 app.include_router(augmentation_router.router)
 app.include_router(training_router.router)
+app.include_router(experiments_router.router)
