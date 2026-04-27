@@ -29,7 +29,9 @@ class DatasetInfoSchema(BaseModel):
     name: str
     versionId: str
     versionName: str
-    yaml_path: str
+    workspace_path: Optional[str] = None
+    active_folders: List[str] = Field(default_factory=list)
+    classes: List[str] = Field(default_factory=list)
 
 class TrainingRequestSchema(TrainingParamsSchema):
     augmentations: AugmentationSchema
