@@ -1,4 +1,5 @@
 import os
+import re
 import uuid
 import yaml
 import threading
@@ -6,7 +7,7 @@ import json
 from datetime import datetime
 from typing import Dict, Optional, List
 from ultralytics import YOLO
-from core.paths import EXPERIMENTS_DIR
+from core.paths import get_project_paths
 from schemas.training_schema import TrainingRequestSchema, TrainingStatusSchema
 import torch
 
@@ -189,13 +190,54 @@ def run_real_training(task_id: str, request: TrainingRequestSchema):
     stop_event = training_events.get(task_id)
     
     try:
+        workspace_path = getattr(request.dataset, 'workspace_path', None)
+        project_paths = get_project_paths(workspace_path)
+        training_dir = project_paths["training"]
+
         add_training_log(task_id, f"Инициализация обучения на модели {request.model}")
         training_tasks[task_id].status = "running"
         training_tasks[task_id].updated_at = datetime.now()
         
-        exp_dir = os.path.join(EXPERIMENTS_DIR, task_id)
+        exp_dir = os.path.join(training_dir, task_id)
         os.makedirs(exp_dir, exist_ok=True)
         
+        train_paths = []
+        val_paths = []
+        
+        active_folders = getattr(request.dataset, 'active_folders', [])
+        
+        for folder_name in active_folders:
+            safe_folder_name = re.sub(r"[^a-zA-Zа-яА-Я0-9._-]+", "_", folder_name).strip("._-")
+            ds_dir = os.path.join(project_paths["datasets"], safe_folder_name)
+            
+            if os.path.exists(os.path.join(ds_dir, "train", "images")):
+                train_paths.append(os.path.join(ds_dir, "train", "images"))
+                val_paths.append(os.path.join(ds_dir, "val", "images"))
+        
+        if not train_paths:
+            raise ValueError("Не найдено экспортированных изображений для выбранных папок! Сначала сохраните датасет.")
+
+        run_data_yaml = os.path.join(exp_dir, "run_data.yaml")
+
+        classes_dict = {i: name for i, name in enumerate(request.dataset.classes)}
+        if not classes_dict and active_folders:
+            first_folder = re.sub(r"[^a-zA-Zа-яА-Я0-9._-]+", "_", active_folders[0]).strip("._-")
+            first_yaml_path = os.path.join(project_paths["datasets"], first_folder, "dataset.yaml")
+            if os.path.exists(first_yaml_path):
+                with open(first_yaml_path, 'r', encoding='utf-8') as f:
+                    ds_data = yaml.safe_load(f)
+                    classes_dict = ds_data.get("names", {})
+
+        yaml_content = {
+            "path": "",
+            "train": train_paths,
+            "val": val_paths,
+            "names": classes_dict
+        }
+        
+        with open(run_data_yaml, 'w', encoding='utf-8') as f:
+            yaml.dump(yaml_content, f, allow_unicode=True)
+
         config_path = os.path.join(exp_dir, "config.yaml")
         with open(config_path, 'w', encoding='utf-8') as f:
             yaml.dump(request.model_dump(), f, default_flow_style=False, allow_unicode=True)
@@ -224,7 +266,7 @@ def run_real_training(task_id: str, request: TrainingRequestSchema):
             print(f"[ERROR] Failed to register callbacks: {e}")
         
         train_params = {
-            'data': request.dataset.yaml_path,
+            'data': run_data_yaml,
             'epochs': request.epochs,
             'batch': request.batch,
             'imgsz': request.imgsz,
@@ -242,7 +284,7 @@ def run_real_training(task_id: str, request: TrainingRequestSchema):
             'warmup_epochs': request.warmup_epochs,
             'warmup_momentum': request.warmup_momentum,
             'warmup_bias_lr': request.warmup_bias_lr,
-            'project': EXPERIMENTS_DIR,
+            'project': training_dir,
             'name': task_id,
             'exist_ok': True,
             'verbose': True,
@@ -309,11 +351,12 @@ def run_real_training(task_id: str, request: TrainingRequestSchema):
         training_tasks[task_id].error = str(e)
         training_tasks[task_id].updated_at = datetime.now()
         
-        exp_dir = os.path.join(EXPERIMENTS_DIR, task_id)
-        os.makedirs(exp_dir, exist_ok=True)
-        error_path = os.path.join(exp_dir, "error.log")
-        with open(error_path, 'w', encoding='utf-8') as f:
-            f.write(str(e))
+        if 'experiments_dir' in locals():
+            exp_dir = os.path.join(training_dir, task_id)
+            os.makedirs(exp_dir, exist_ok=True)
+            error_path = os.path.join(exp_dir, "error.log")
+            with open(error_path, 'w', encoding='utf-8') as f:
+                f.write(str(e))
     
     finally:
         if task_id in training_models:

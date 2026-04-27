@@ -7,9 +7,9 @@ import {
   getTrainingStatus,
   stopTraining,
   getAugmentations,
-  getTrainingLogs,
-  getDataset
+  getTrainingLogs
 } from "../../services/api";
+import { getDisabledFolderPaths } from "../../utils/fileSystem";
 import "../../styles/TrainingView.css";
 
 function TrainingView({ collection, currentVersionId }) {
@@ -17,7 +17,6 @@ function TrainingView({ collection, currentVersionId }) {
   const [activeTrainings, setActiveTrainings] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
-  const [datasetYamlPath, setDatasetYamlPath] = useState(null);
   const completedTasksRef = useRef(new Set());
   const websocketsRef = useRef({});
   
@@ -165,7 +164,7 @@ function TrainingView({ collection, currentVersionId }) {
 
   const loadConfigs = async () => {
     try {
-      const trainingConfig = await getTrainingConfig();
+      const trainingConfig = await getTrainingConfig(collection.workspacePath);
       setParams(prev => ({ 
         ...prev, 
         ...trainingConfig,
@@ -177,33 +176,13 @@ function TrainingView({ collection, currentVersionId }) {
     }
 
     try {
-      const augConfig = await getAugmentations();
+      const augConfig = await getAugmentations(collection.workspacePath);
       setAugmentationParams(augConfig);
       addLog("Конфигурация аугментации загружена", "success");
     } catch (error) {
       addLog(`Ошибка загрузки конфигурации аугментации: ${error.message}`, "error");
     }
   };
-
-  useEffect(() => {
-    const loadDatasetYamlPath = async () => {
-      if (!collection?.name) {
-        setDatasetYamlPath(null);
-        return;
-      }
-
-      try {
-        const result = await getDataset(collection.name);
-        setDatasetYamlPath(result.yaml_path);
-        addLog(`Путь к датасету ${result.dataset_name} загружен`, "success");
-      } catch (error) {
-        addLog(`Ошибка загрузки пути к датасету: ${error.message}`, "error");
-        setDatasetYamlPath(null);
-      }
-    };
-
-    loadDatasetYamlPath();
-  }, [collection?.name, addLog]);
 
   const clearLogs = () => {
     setConsoleLogs([]);
@@ -266,7 +245,7 @@ function TrainingView({ collection, currentVersionId }) {
   const handleSaveConfig = async () => {
     try {
       setIsLoading(true);
-      await saveTrainingConfig(params);
+      await saveTrainingConfig(params, collection.workspacePath);
       addLog("Конфигурация обучения сохранена", "success");
       alert("Конфигурация сохранена");
     } catch (error) {
@@ -283,6 +262,16 @@ function TrainingView({ collection, currentVersionId }) {
 
     const { modelName, ...paramsWithoutModelName } = params;
 
+    const activeFolderNames = collection.folders
+      ? collection.folders.filter(f => f.isEnabled).map(f => f.name)
+      : [];
+
+    if (activeFolderNames.length === 0) {
+      addLog("Нет активных папок для обучения. Отметьте папки галочками.", "warning");
+      alert("Выберите хотя бы одну папку для обучения в меню слева.");
+      return;
+    }
+
     const trainingData = {
       ...paramsWithoutModelName,
       augmentations: augmentationParams || {},
@@ -291,7 +280,9 @@ function TrainingView({ collection, currentVersionId }) {
         name: collection.name,
         versionId: currentVersionId || "",
         versionName: currentVersion?.name || `Version ${currentVersionId || "unknown"}`,
-        yaml_path: datasetYamlPath || "coco8.yaml"
+        workspace_path: collection.workspacePath,
+        active_folders: activeFolderNames,
+        classes: []
       },
       modelName: params.modelName && typeof params.modelName === 'string' 
         ? params.modelName
@@ -302,7 +293,7 @@ function TrainingView({ collection, currentVersionId }) {
     try {
       setIsLoading(true);
 
-      await saveTrainingConfig(trainingData);
+      await saveTrainingConfig(trainingData, collection.workspacePath);
 
       const response = await startTraining(trainingData);
       const taskId = response.task_id;
