@@ -1,4 +1,6 @@
 import os
+import yaml
+import datetime
 import tkinter as tk
 from tkinter import filedialog
 from typing import Dict
@@ -18,17 +20,30 @@ def pick_directory_dialog() -> str:
     
     return folder_path
 
-def init_project_workspace(name: str, workspace_path: str) -> Dict:
+def init_project_workspace(name: str, workspace_path: str, project_id: str, 
+                           folders: list = None) -> Dict:
     if not workspace_path:
         raise ValueError("Путь к рабочей папке не может быть пустым")
         
     try:
         os.makedirs(workspace_path, exist_ok=True)
         
+        yaml_path = os.path.join(workspace_path, f"{name}.yaml")
+    
+        project_config = {
+            "id": project_id,
+            "name": name,
+            "workspace_path": workspace_path,
+            "last_modified": datetime.datetime.now().isoformat(),
+            "folders": folders or [],
+        }
+    
+        with open(yaml_path, 'w', encoding='utf-8') as f:
+            yaml.dump(project_config, f, allow_unicode=True, sort_keys=False)
+        
         return {
-            "status": "success", 
-            "message": f"Рабочая папка для проекта '{name}' успешно инициализирована",
-            "path": workspace_path
+            "status": "success",
+            "config_file": yaml_path
         }
     except Exception as e:
-        raise Exception(f"Не удалось создать директорию {workspace_path}: {str(e)}")
+        raise Exception(f"Не удалось инициализировать директорию {workspace_path}: {str(e)}")

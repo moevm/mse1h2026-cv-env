@@ -1,5 +1,20 @@
 from pydantic import BaseModel, Field
+from typing import Optional, List, Any, Dict
 
 class ProjectInitRequest(BaseModel):
+    id: str = Field(..., description="Уникальный идентификатор проекта")
     name: str = Field(..., description="Имя проекта")
     path: str = Field(..., description="Абсолютный путь к рабочей папке проекта")
+    folders: Optional[List[Dict[str, Any]]] = Field(default=[])
+    classes: Optional[List[Dict[str, Any]]] = Field(default=[])
+    train_split_percent: Optional[int] = 80
+    val_split_percent: Optional[int] = 20
+
+class ProjectUpdateRequest(BaseModel):
+    id: str
+    name: str
+    path: str
+    folders: List[Dict[str, Any]] = []
+    classes: Optional[List[Dict[str, Any]]] = []
+    train_split_percent: Optional[int] = 80
+    val_split_percent: Optional[int] = 20
