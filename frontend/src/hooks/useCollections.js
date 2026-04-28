@@ -111,24 +111,44 @@ function useCollections() {
     }
   };
 
-  const toggleFolderState = (collectionId, targetPath, isEnabled) => {
+  const toggleFolderState = (collectionId, targetPath, newIsEnabled) => {
     setCollections((prev) => prev.map((col) => {
       if (col.id !== collectionId) return col;
 
-      const updateNode = (nodes) => nodes.map((node) => {
-        if (node.path === targetPath) {
-          const setChildrenState = (children) => children.map((c) => ({ 
-            ...c, isEnabled, children: setChildrenState(c.children) 
-          }));
-          return { ...node, isEnabled, children: setChildrenState(node.children) };
-        }
-        if (node.children?.length) {
-          return { ...node, children: updateNode(node.children) };
-        }
-        return node;
-      });
+      const setDescendants = (nodes, val) => nodes.map(n => ({
+        ...n,
+        isEnabled: val,
+        children: n.children ? setDescendants(n.children, val) : []
+      }));
 
-      return { ...col, folders: updateNode(col.folders || []) };
+      const updateTree = (nodes) => {
+        return nodes.map(node => {
+
+          if (node.path === targetPath) {
+            return {
+              ...node,
+              isEnabled: newIsEnabled,
+              children: node.children ? setDescendants(node.children, newIsEnabled) : []
+            };
+          }
+
+          if (targetPath.startsWith(node.path + '/')) {
+            const updatedChildren = updateTree(node.children || []);
+
+            const nextEnabled = newIsEnabled ? true : node.isEnabled;
+
+            return {
+              ...node,
+              isEnabled: nextEnabled,
+              children: updatedChildren
+            };
+          }
+
+          return node;
+        });
+      };
+
+      return { ...col, folders: updateTree(col.folders || []) };
     }));
   };
 
