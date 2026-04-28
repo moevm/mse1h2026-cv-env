@@ -1,10 +1,9 @@
 from fastapi import APIRouter, HTTPException
 import asyncio
 import os
-import yaml
-import datetime
+from fastapi.responses import FileResponse
 from schemas.project_schema import ProjectInitRequest, ProjectUpdateRequest
-from services.project_service import pick_directory_dialog, init_project_workspace, update_project_workspace
+from services.project_service import *
 
 router = APIRouter(prefix="/api", tags=["Projects"])
 
@@ -34,3 +33,26 @@ async def update_project(request: ProjectUpdateRequest):
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/projects/load")
+async def load_project(path: str):
+    try:
+        result = load_project_workspace(path)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/projects/scan-folder")
+async def scan_folder(path: str, virtual_name: str):
+    try:
+        result = await asyncio.to_thread(scan_folder_structure, path, virtual_name)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/utils/image")
+async def serve_image(path: str):
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="Файл не найден на диске")
+    
+    return FileResponse(path)
