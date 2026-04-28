@@ -12,12 +12,29 @@ export const pickWorkspacePath = async () => {
   return data.path;
 };
 
-export const initProjectOnBackend = async (projectName, workspacePath) => {
+export const initProjectOnBackend = async (payload) => {
   const res = await fetch(`${API_BASE_URL}/api/projects/init`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: projectName, path: workspacePath }),
+    body: JSON.stringify(payload),
   });
+  
+  if (!res.ok) {
+    const errorData = await res.json(); 
+    console.error("Детали ошибки 422:", errorData);
+    throw new Error(JSON.stringify(errorData.detail) || "Ошибка инициализации проекта");
+  }
+  
+  return await res.json();
+};
+
+export const updateProjectOnBackend = async (payload) => {
+  const res = await fetch(`${API_BASE_URL}/api/projects/update`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error("Ошибка обновления YAML");
   return await res.json();
 };
 

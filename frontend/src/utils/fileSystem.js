@@ -1,4 +1,12 @@
-// src/utils/fileSystem.js
+export const serializeFolders = (nodes) => {
+  return nodes.map(node => ({
+    name: node.name,
+    path: node.path,
+    isEnabled: node.isEnabled,
+    children: node.children ? serializeFolders(node.children) : []
+  }));
+};
+
 export async function getAllFilesFromDirectory(dirHandle, relativePath = '') {
   let files = [];
   for await (const [name, handle] of dirHandle.entries()) {

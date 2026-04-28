@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { getAllFilesFromDirectory, buildFolderTree } from "../utils/fileSystem";
+import { getAllFilesFromDirectory, buildFolderTree, serializeFolders } from "../utils/fileSystem";
 import { saveCollections, loadCollections } from "../utils/persistence";
-import { deleteStoredDataset, getStoredDatasets } from "../services/api";
+import { deleteStoredDataset, getStoredDatasets, updateProjectOnBackend } from "../services/api";
 
 const DEFAULT_TRAIN_SPLIT_PERCENT = 80;
 
@@ -87,9 +87,9 @@ function useCollections() {
     }
   }, [collections, isLoadingCollections]);
 
-  const addCollection = (projectName, workspacePath) => {
+  const addCollection = (projectName, workspacePath, customId = null) => {
     const newCollection = {
-      id: Date.now().toString(),
+      id: customId || Date.now().toString(),
       name: projectName,
       workspacePath: workspacePath,
       date: new Date().toISOString(),
@@ -135,12 +135,6 @@ function useCollections() {
   const removeCollection = async (collectionId) => {
     const collection = collections.find((c) => c.id === collectionId);
     if (!collection) return false;
-
-    try {
-      await deleteStoredDataset(collection.workspacePath);
-    } catch (e) {
-      console.warn("Папка на бэкенде не найдена или уже удалена", e);
-    }
 
     setCollections((prev) => prev.filter((c) => c.id !== collectionId));
     return true;
@@ -193,6 +187,34 @@ function useCollections() {
       ),
     );
   };
+
+  const debounceSync = useCallback((collection) => {
+    if (!collection.workspacePath) return;
+
+    const payload = {
+      id: collection.id,
+      name: collection.name,
+      path: collection.workspacePath,
+      folders: serializeFolders(collection.folders || []),
+      classes: collection.projectClasses || [],
+      train_split_percent: collection.trainSplitPercent || 80,
+      val_split_percent: collection.valSplitPercent || 20
+    };
+
+    updateProjectOnBackend(payload).catch(err => {
+      console.error("Ошибка фоновой синхронизации YAML:", err);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (isLoadingCollections || collections.length === 0) return;
+
+    const timeoutId = setTimeout(() => {
+      collections.forEach(col => debounceSync(col));
+    }, 1000);
+
+    return () => clearTimeout(timeoutId);
+  }, [collections, isLoadingCollections, debounceSync]);
 
   return {
     collections,

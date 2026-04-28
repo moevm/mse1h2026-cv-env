@@ -76,13 +76,22 @@ function App() {
     
       const folderName = absolutePath.split(/[\\/]/).pop();
       const finalProjectName = newProjectName.trim() || folderName;
+      const projectId = Date.now().toString();
     
-      await initProjectOnBackend(finalProjectName, absolutePath);
+      const payload = {
+        id: projectId,
+        name: finalProjectName,
+        path: absolutePath,
+        folders: []
+      };
+
+      await initProjectOnBackend(payload);
     
-      const id = addCollection(finalProjectName, absolutePath);
+      const id = addCollection(finalProjectName, absolutePath, projectId);
       
       setCurrentCollectionId(id);
       setShowNewProjectModal(false);
+      setNewProjectName("");
     } catch (err) {
       alert("Ошибка: " + err.message);
     }
