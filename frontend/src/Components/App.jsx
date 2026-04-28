@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 
 import Sidebar from "./Layout/Sidebar";
 import Navbar from "./Layout/Navbar";
+import ProjectManagerModal from "./Layout/ProjectManagerModal";
 import DatasetView from "./Dataset/DatasetView";
 import AnnotationView from "./Annotation/AnnotationView";
 import AugmentationView from "./Augmentation/AugmentationView";
@@ -9,25 +10,9 @@ import TrainingView from "./Training/TrainingView";
 import ExperimentsView from "./Experiments/ExperimentsView";
 
 import useCollections from "../hooks/useCollections";
-import { buildFolderTree, getAllFilesFromDirectory } from "../utils/fileSystem";
-import { pickWorkspacePath, initProjectOnBackend } from "../services/api";
+import { pickWorkspacePath, scanFolderOnBackend } from "../services/api";
 
 import "../styles/App.css";
-
-function buildImagesWithAnnotations(files) {
-  const imageFiles = files.filter((file) => file.type.startsWith("image/"));
-  return imageFiles.map(file => ({
-    file,
-    url: null,
-    name: file.name,
-    type: file.type,
-    size: file.size,
-    relativePath: file.webkitRelativePath || file.relativePath || file.name,
-    split: null,
-    annotationFile: null,
-    annotationText: null,
-  }));
-}
 
 function App() {
   const {
@@ -38,14 +23,14 @@ function App() {
     removeCollection,
     updateCollection,
     syncCollection,
-    toggleFolderState
+    toggleFolderState,
+    loadProject
   } = useCollections();
   
   const [currentCollectionId, setCurrentCollectionId] = useState(null);
   const [currentTab, setCurrentTab] = useState("dataset");
   
-  const [showNewProjectModal, setShowNewProjectModal] = useState(false);
-  const [newProjectName, setNewProjectName] = useState("");
+  const [showManagerModal, setShowManagerModal] = useState(false);
 
   const versions = [];
   const currentVersionId = null;
@@ -61,51 +46,24 @@ function App() {
 
   const currentCollection = currentCollectionId ? getCollection(currentCollectionId) : null;
 
-  function handleAddCollectionClick() {
-    setNewProjectName("");
-    setShowNewProjectModal(true);
-  }
+  const handleProjectCreated = (name, path, id) => {
+    const newId = addCollection(name, path, id);
+    setCurrentCollectionId(newId || id);
+    setShowManagerModal(false);
+  };
 
-  async function handleCreateProject() {
+  const handleProjectLoaded = async (projectData) => {
     try {
-      const absolutePath = await pickWorkspacePath();
-
-      if (!absolutePath || typeof absolutePath !== 'string' || absolutePath.trim() === '') {
-        return;
-      }
-    
-      const folderName = absolutePath.split(/[\\/]/).pop();
-      const finalProjectName = newProjectName.trim() || folderName;
-      const projectId = Date.now().toString();
-    
-      const payload = {
-        id: projectId,
-        name: finalProjectName,
-        path: absolutePath,
-        folders: []
-      };
-
-      await initProjectOnBackend(payload);
-    
-      const id = addCollection(finalProjectName, absolutePath, projectId);
+      const id = await loadProject(projectData);
       
       setCurrentCollectionId(id);
-      setShowNewProjectModal(false);
-      setNewProjectName("");
-    } catch (err) {
-      alert("Ошибка: " + err.message);
+      setShowManagerModal(false);
+    } catch (error) {
+      alert("Ошибка при формировании проекта: " + error.message);
     }
-  }
+  };
   
   async function handleCollectionClick(collectionId) {
-    const collection = getCollection(collectionId);
-    
-    if (collection.folders.length > 0) {
-      for (const folder of collection.folders) {
-        await requestFolderAccess(folder);
-      }
-    }
-    
     setCurrentCollectionId(collectionId);
   }
 
@@ -113,49 +71,46 @@ function App() {
     if (!currentCollectionId || !currentCollection) return;
     
     try {
-      const directoryHandle = await window.showDirectoryPicker({ mode: "read" });
+      const absolutePath = await pickWorkspacePath(); 
+      if (!absolutePath) return;
+
+      const folderName = absolutePath.split(/[\\/]/).pop();
       
       let isDuplicate = false;
       if (currentCollection.folders) {
         for (const folder of currentCollection.folders) {
-          if (await folder.handle.isSameEntry(directoryHandle)) {
-            isDuplicate = true;
-            break;
+          if (folder.absolutePath === absolutePath) {
+            isDuplicate = true; break;
           }
         }
       }
 
       if (isDuplicate) {
-        alert(`Эта папка ("${directoryHandle.name}") уже добавлена в проект!`);
+        alert("Эта папка уже добавлена в проект!");
         return;
       }
-      
-      const rootId = `src_${Date.now()}`;
-      const uniqueRootPath = `${rootId}_${directoryHandle.name}`;
 
-      const [newFiles, childrenTree] = await Promise.all([
-        getAllFilesFromDirectory(directoryHandle, uniqueRootPath),
-        buildFolderTree(directoryHandle, uniqueRootPath)
-      ]);
+      const rootId = `src_${Date.now()}`;
+      const uniqueRootPath = `${rootId}_${folderName}`;
+
+      const scanResult = await scanFolderOnBackend(absolutePath, uniqueRootPath);
 
       const rootNode = {
-        name: directoryHandle.name,
+        name: folderName,
         path: uniqueRootPath, 
-        handle: directoryHandle,
+        absolutePath: absolutePath, 
         isEnabled: true,
-        children: childrenTree
+        children: scanResult.tree
       };
 
-      const newImages = buildImagesWithAnnotations(newFiles);
+      const updatedFolders = [...(currentCollection.folders || []), rootNode];
 
-      updateCollection(currentCollectionId, {
-        folders: [...(currentCollection.folders || []), rootNode],
-        images: [...(currentCollection.images || []), ...newImages],
-        imageCount: (currentCollection.imageCount || 0) + newImages.length
-      });
+      updateCollection(currentCollectionId, { folders: updatedFolders });
+
+      await syncCollection(currentCollectionId, updatedFolders);
 
     } catch (error) {
-      console.log("Выбор дополнительной папки отменен:", error);
+      console.log("Ошибка добавления папки:", error);
     }
   }
 
@@ -175,12 +130,17 @@ function App() {
 
   function renderTabContent() {
     if (isLoadingCollections) return <div className="empty-state"><h2>Загрузка...</h2></div>;
+    
     if (!currentCollection) return (
-      <div className="empty-state">
-        <h2>Добро пожаловать</h2>
-        <button className="add-collection-button" onClick={handleAddCollectionClick}>
-          + Создать проект
-        </button>
+      <div className="welcome-container">
+        <div className="empty-state welcome-card">
+          <h2>Добро пожаловать</h2>
+          <div className="welcome-buttons">
+            <button className="add-collection-button" onClick={() => setShowManagerModal(true)}>
+              Добавить проект
+            </button>
+          </div>
+        </div>
       </div>
     );
 
@@ -202,8 +162,8 @@ function App() {
         <Sidebar
           collections={collections}
           currentCollectionId={currentCollectionId}
-          onCollectionClick={setCurrentCollectionId}
-          onAddCollection={handleAddCollectionClick}
+          onCollectionClick={handleCollectionClick}
+          onAddCollection={() => setShowManagerModal(true)}
           onDeleteCollection={handleDeleteCollection}
           onAddFolders={handleAddFolders}
           onToggleFolder={handleToggleFolder}
@@ -214,27 +174,12 @@ function App() {
         </div>
       </div>
 
-      {showNewProjectModal && (
-        <div className="modal-overlay">
-          <div className="modal-content new-project-modal">
-            <h3>Создание нового проекта</h3>
-            <p className="hint">Рабочая папка проекта будет использоваться для сохранения YAML файлов и конфигураций.</p>
-            <div className="form-group">
-              <label>Имя проекта (необязательно):</label>
-              <input 
-                type="text" 
-                value={newProjectName} 
-                onChange={e => setNewProjectName(e.target.value)} 
-                placeholder="Если оставить пустым, возьмется имя папки"
-                autoFocus
-              />
-            </div>
-            <div className="modal-actions">
-              <button className="cancel-btn" onClick={() => setShowNewProjectModal(false)}>Отмена</button>
-              <button className="primary-btn" onClick={handleCreateProject}>Выбрать рабочую папку</button>
-            </div>
-          </div>
-        </div>
+      {showManagerModal && (
+        <ProjectManagerModal 
+          onClose={() => setShowManagerModal(false)}
+          onProjectCreated={handleProjectCreated}
+          onProjectLoaded={handleProjectLoaded}
+        />
       )}
     </div>
   );

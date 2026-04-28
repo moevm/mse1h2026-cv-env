@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo } from "react";
-import useObjectUrl from "../../hooks/useObjectUrl";
 import { getDisabledFolderPaths } from "../../utils/fileSystem";
 import { getAugmentations, saveAugmentations } from "../../services/api";
 import "../../styles/AugmentationView.css";
@@ -40,8 +39,8 @@ function AugmentationView({ collection, versions, currentVersionId }) {
     });
   }, [collection?.images, currentVersion?.images, ignoredPaths]);
 
-  const originalUrl = useObjectUrl(originalImage?.file);
-  const augmentedUrl = useObjectUrl(augmentedImage?.file);
+  const originalUrl = originalImage?.url;
+  const augmentedUrl = augmentedImage?.url;
 
   useEffect(() => {
     getAugmentations(collection.workspacePath)

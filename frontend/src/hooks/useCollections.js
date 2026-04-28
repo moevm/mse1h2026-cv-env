@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { getAllFilesFromDirectory, buildFolderTree, serializeFolders } from "../utils/fileSystem";
+import { serializeFolders } from "../utils/fileSystem";
 import { saveCollections, loadCollections } from "../utils/persistence";
-import { deleteStoredDataset, getStoredDatasets, updateProjectOnBackend } from "../services/api";
+import { deleteStoredDataset, getStoredDatasets, updateProjectOnBackend, scanFolderOnBackend, getImageUrl } from "../services/api";
 
 const DEFAULT_TRAIN_SPLIT_PERCENT = 80;
 
@@ -24,45 +24,31 @@ function mergeTrees(oldNodes = [], newNodes = []) {
   });
 }
 
-function buildImagesWithAnnotations(files) {
-  const allFiles = Array.from(files);
-  const imageFiles = allFiles.filter((file) => file.type.startsWith("image/"));
-  const txtFiles = allFiles.filter(
-    (file) => file.name.toLowerCase().endsWith(".txt") && !file.type.startsWith("image/"),
-  );
+function buildImagesWithAnnotations(files, loadedAnnotations = {}) {
+  const imageFiles = files.filter((f) => f.type.startsWith("image/"));
+  const txtFiles = files.filter((f) => f.type === "text/plain");
 
   const txtByStem = new Map(
     txtFiles.map((file) => [
-      (file.relativePath || file.name)
-        .replace(/\\/g, "/")
-        .replace(/\.txt$/i, "")
-        .toLowerCase(),
+      file.relativePath.replace(/\\/g, "/").replace(/\.txt$/i, "").toLowerCase(),
       file,
-    ]),
+    ])
   );
 
-  const sortedImageFiles = imageFiles.sort((a, b) =>
-    (a.webkitRelativePath || a.relativePath || a.name).localeCompare(
-      b.webkitRelativePath || b.relativePath || b.name,
-      undefined,
-      { numeric: true, sensitivity: "base" },
-    ),
-  );
-
-  return sortedImageFiles.map((file) => {
-    const relativePath = file.webkitRelativePath || file.relativePath || file.name;
-    const stemKey = relativePath.replace(/\\/g, "/").replace(/\.[^.]+$/u, "").toLowerCase();
+  return imageFiles.map((file) => {
+    const stemKey = file.relativePath.replace(/\\/g, "/").replace(/\.[^.]+$/u, "").toLowerCase();
+    const annotationTextFromBackend = loadedAnnotations[stemKey] || null;
 
     return {
-      file,
-      url: null,
+      file: file,
+      url: getImageUrl(file.absolute_path),
       name: file.name,
       type: file.type,
       size: file.size,
-      relativePath,
+      relativePath: file.relativePath,
       split: null,
       annotationFile: txtByStem.get(stemKey) || null,
-      annotationText: null,
+      annotationText: annotationTextFromBackend,
     };
   });
 }
@@ -99,16 +85,6 @@ function useCollections() {
     };
     setCollections(prev => [...prev, newCollection]);
     return newCollection.id;
-  };
-
-  const requestFolderAccess = async (folderNode) => {
-    try {
-      if (await folderNode.handle.queryPermission({ mode: 'read' }) === 'granted') return true;
-      return await folderNode.handle.requestPermission({ mode: 'read' }) === 'granted';
-    } catch (e) {
-      console.error("Доступ к папке отклонен", e);
-      return false;
-    }
   };
 
   const toggleFolderState = (collectionId, targetPath, newIsEnabled) => {
@@ -170,41 +146,41 @@ function useCollections() {
     );
   };
 
-  const syncCollection = async (collectionId) => {
+  const syncCollection = async (collectionId, forceFolders = null) => {
     const collection = collections.find((c) => c.id === collectionId);
-    if (!collection || !collection.folders) return;
+    if (!collection) return;
+
+    const targetFolders = forceFolders || collection.folders;
+    if (!targetFolders || targetFolders.length === 0) return;
 
     let allUpdatedFiles = [];
     const updatedFolders = [];
 
-    for (const folderNode of collection.folders) {
-      const hasAccess = await requestFolderAccess(folderNode);
-      if (!hasAccess) {
+    for (const folderNode of targetFolders) {
+      if (!folderNode.absolutePath) {
+        console.warn("Папка старого формата (без absolutePath), пропуск:", folderNode.name);
         updatedFolders.push(folderNode);
-        continue;
+        continue; 
       }
 
-      const freshFiles = await getAllFilesFromDirectory(folderNode.handle, folderNode.path);
-      
-      const freshTree = await buildFolderTree(folderNode.handle, folderNode.path);
-      
-      const mergedChildren = mergeTrees(folderNode.children || [], freshTree || []);
+      const scanResult = await scanFolderOnBackend(folderNode.absolutePath, folderNode.path);
+      const mergedChildren = mergeTrees(folderNode.children || [], scanResult.tree || []);
 
-      allUpdatedFiles.push(...freshFiles);
+      allUpdatedFiles.push(...scanResult.files);
       updatedFolders.push({
         ...folderNode,
         children: mergedChildren
       });
     }
 
-    const images = buildImagesWithAnnotations(allUpdatedFiles);
+    const images = buildImagesWithAnnotations(allUpdatedFiles, collection.loadedAnnotations || {});
 
     setCollections((prev) =>
       prev.map((c) =>
         c.id === collectionId 
           ? { ...c, images, imageCount: images.length, folders: updatedFolders } 
           : c
-      ),
+      )
     );
   };
 
@@ -237,16 +213,71 @@ function useCollections() {
     return () => clearTimeout(timeoutId);
   }, [collections, isLoadingCollections, debounceSync]);
 
+  const loadProject = async (backendData) => {
+    const { config, annotated_images } = backendData;
+    
+    let allUpdatedFiles = [];
+    const updatedFolders = [];
+
+    if (config.folders && config.folders.length > 0) {
+      for (const folderNode of config.folders) {
+        if (!folderNode.absolutePath) {
+          console.warn("Папка старого формата, пропускаем автосканирование:", folderNode.name);
+          updatedFolders.push(folderNode);
+          continue;
+        }
+
+        try {
+          const scanResult = await scanFolderOnBackend(folderNode.absolutePath, folderNode.path);
+          
+          const mergedChildren = mergeTrees(folderNode.children || [], scanResult.tree || []);
+          
+          allUpdatedFiles.push(...scanResult.files);
+          updatedFolders.push({
+            ...folderNode,
+            children: mergedChildren
+          });
+        } catch (error) {
+          console.error("Ошибка при автосканировании папки:", folderNode.name, error);
+          updatedFolders.push(folderNode);
+        }
+      }
+    }
+
+    const images = buildImagesWithAnnotations(allUpdatedFiles, annotated_images || {});
+    
+    const newCollection = {
+      id: config.id,
+      name: config.name,
+      workspacePath: config.path,
+      date: config.created_at || new Date().toISOString(),
+      folders: updatedFolders,
+      projectClasses: config.classes || [],
+      trainSplitPercent: config.train_split_percent || 80,
+      valSplitPercent: config.val_split_percent || 20,
+      images: images,
+      imageCount: images.length,
+      loadedAnnotations: annotated_images || {}
+    };
+    
+    setCollections(prev => {
+      const filtered = prev.filter(c => c.id !== newCollection.id);
+      return [...filtered, newCollection];
+    });
+    
+    return newCollection.id;
+  };
+
   return {
     collections,
     isLoadingCollections,
     addCollection,
     removeCollection,
     updateCollection,
-    requestFolderAccess,
     getCollection,
     syncCollection,
     toggleFolderState,
+    loadProject,
   };
 }
 

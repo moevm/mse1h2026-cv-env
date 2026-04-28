@@ -70,7 +70,7 @@ function Sidebar({
 
       <div className="sidebar-actions">
         <button className="new-collection-btn" onClick={onAddCollection}>
-          + Новый проект
+          + Добавить проект
         </button>
       </div>
 

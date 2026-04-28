@@ -13,46 +13,12 @@ const DEFAULT_TRAIN_SPLIT_PERCENT = 80;
 
 function getImageSize(image) {
   return new Promise((resolve, reject) => {
-    const sourceUrl = image.url || URL.createObjectURL(image.file);
-    const shouldRevoke = !image.url;
     const previewImage = new Image();
 
-    previewImage.onload = () => {
-      resolve({ width: previewImage.naturalWidth, height: previewImage.naturalHeight });
-      if (shouldRevoke) {
-        URL.revokeObjectURL(sourceUrl);
-      }
-    };
+    previewImage.onload = () => resolve({ width: previewImage.naturalWidth, height: previewImage.naturalHeight });
+    previewImage.onerror = (error) => reject(error);
 
-    previewImage.onerror = (error) => {
-      if (shouldRevoke) {
-        URL.revokeObjectURL(sourceUrl);
-      }
-      reject(error);
-    };
-
-    previewImage.src = sourceUrl;
-  });
-}
-
-async function ensureImageFile(image) {
-  if (image.file instanceof File) {
-    return image.file;
-  }
-
-  if (!image.url) {
-    throw new Error(`Не найден источник изображения ${image.name}`);
-  }
-
-  const response = await fetch(image.url);
-  if (!response.ok) {
-    throw new Error(`Не удалось загрузить изображение ${image.name}`);
-  }
-
-  const blob = await response.blob();
-  return new File([blob], image.name, {
-    type: blob.type || image.type || "application/octet-stream",
-    lastModified: Date.now(),
+    previewImage.src = image.url;
   });
 }
 
@@ -167,7 +133,8 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
       const allUsedClassIds = new Set();
 
       for (const image of images) {
-        const [size, imageFile] = await Promise.all([getImageSize(image), ensureImageFile(image)]);
+        const size = await getImageSize(image);
+        
         const existingTxt = image.annotationFile
           ? await image.annotationFile.text()
           : image.annotationText || "";
@@ -196,7 +163,7 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
         ].join("\n");
 
         items.push({
-          file: imageFile,
+          absolutePath: image.file.absolute_path,
           relativePath: image.relativePath,
           annotationTxt: mergedLines,
         });
