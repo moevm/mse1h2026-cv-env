@@ -4,16 +4,17 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 STORAGE_DIR = os.path.join(BASE_DIR, "storage")
 DATASETS_DIR = os.path.join(STORAGE_DIR, "datasets")
 EXPERIMENTS_DIR = os.path.join(STORAGE_DIR, "experiments")
+TRAINING_DIR = os.path.join(STORAGE_DIR, "training")
 CONFIGS_DIR = os.path.join(STORAGE_DIR, "configs")
 
 def get_project_paths(workspace_path: str = None):
-    base = workspace_path if (workspace_path and os.path.isabs(workspace_path)) else STORAGE_DIR
+    storage = workspace_path if (workspace_path and os.path.isabs(workspace_path)) else STORAGE_DIR
     return {
-        "base": base,
-        "datasets": os.path.join(base, "datasets"),
-        "configs": os.path.join(base, "configs"),
-        "training": os.path.join(base, "training"),
-        "experiments": os.path.join(base, "experiments")
+        "storage": storage,
+        "datasets": os.path.join(storage, "datasets"),
+        "configs": os.path.join(storage, "configs"),
+        "training": os.path.join(storage, "training"),
+        "experiments": os.path.join(storage, "experiments")
     }
 
 def ensure_project_directories(workspace_path: str):
@@ -24,5 +25,6 @@ def ensure_project_directories(workspace_path: str):
 
 def ensure_directories():
     os.makedirs(DATASETS_DIR, exist_ok=True)
+    os.makedirs(TRAINING_DIR, exist_ok=True)
     os.makedirs(EXPERIMENTS_DIR, exist_ok=True)
     os.makedirs(CONFIGS_DIR, exist_ok=True)

@@ -200,43 +200,48 @@ def run_real_training(task_id: str, request: TrainingRequestSchema):
         
         exp_dir = os.path.join(training_dir, task_id)
         os.makedirs(exp_dir, exist_ok=True)
-        
-        train_paths = []
-        val_paths = []
-        
-        active_folders = getattr(request.dataset, 'active_folders', [])
-        
-        for folder_name in active_folders:
-            safe_folder_name = re.sub(r"[^a-zA-Zа-яА-Я0-9._-]+", "_", folder_name).strip("._-")
-            ds_dir = os.path.join(project_paths["datasets"], safe_folder_name)
-            
-            if os.path.exists(os.path.join(ds_dir, "train", "images")):
-                train_paths.append(os.path.join(ds_dir, "train", "images"))
-                val_paths.append(os.path.join(ds_dir, "val", "images"))
-        
-        if not train_paths:
-            raise ValueError("Не найдено экспортированных изображений для выбранных папок! Сначала сохраните датасет.")
 
-        run_data_yaml = os.path.join(exp_dir, "run_data.yaml")
+        use_coco8 = getattr(request.dataset, 'use_coco8', False)
 
-        classes_dict = {i: name for i, name in enumerate(request.dataset.classes)}
-        if not classes_dict and active_folders:
-            first_folder = re.sub(r"[^a-zA-Zа-яА-Я0-9._-]+", "_", active_folders[0]).strip("._-")
-            first_yaml_path = os.path.join(project_paths["datasets"], first_folder, "dataset.yaml")
-            if os.path.exists(first_yaml_path):
-                with open(first_yaml_path, 'r', encoding='utf-8') as f:
-                    ds_data = yaml.safe_load(f)
-                    classes_dict = ds_data.get("names", {})
+        if use_coco8:
+            run_data_yaml = "coco8.yaml"
+        else:
+            train_paths = []
+            val_paths = []
 
-        yaml_content = {
-            "path": "",
-            "train": train_paths,
-            "val": val_paths,
-            "names": classes_dict
-        }
-        
-        with open(run_data_yaml, 'w', encoding='utf-8') as f:
-            yaml.dump(yaml_content, f, allow_unicode=True)
+            active_folders = getattr(request.dataset, 'active_folders', [])
+
+            for folder_name in active_folders:
+                safe_folder_name = re.sub(r"[^a-zA-Zа-яА-Я0-9._-]+", "_", folder_name).strip("._-")
+                ds_dir = os.path.join(project_paths["datasets"], safe_folder_name)
+
+                if os.path.exists(os.path.join(ds_dir, "train", "images")):
+                    train_paths.append(os.path.join(ds_dir, "train", "images"))
+                    val_paths.append(os.path.join(ds_dir, "val", "images"))
+
+            if not train_paths:
+                raise ValueError("Не найдено экспортированных изображений для выбранных папок! Сначала сохраните датасет.")
+
+            run_data_yaml = os.path.join(exp_dir, "run_data.yaml")
+
+            classes_dict = {i: name for i, name in enumerate(request.dataset.classes)}
+            if not classes_dict and active_folders:
+                first_folder = re.sub(r"[^a-zA-Zа-яА-Я0-9._-]+", "_", active_folders[0]).strip("._-")
+                first_yaml_path = os.path.join(project_paths["datasets"], first_folder, "dataset.yaml")
+                if os.path.exists(first_yaml_path):
+                    with open(first_yaml_path, 'r', encoding='utf-8') as f:
+                        ds_data = yaml.safe_load(f)
+                        classes_dict = ds_data.get("names", {})
+
+            yaml_content = {
+                "path": "",
+                "train": train_paths,
+                "val": val_paths,
+                "names": classes_dict
+            }
+
+            with open(run_data_yaml, 'w', encoding='utf-8') as f:
+                yaml.dump(yaml_content, f, allow_unicode=True)
 
         config_path = os.path.join(exp_dir, "config.yaml")
         with open(config_path, 'w', encoding='utf-8') as f:

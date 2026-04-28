@@ -28,7 +28,7 @@ async def lifespan(app: FastAPI):
     
     print("[SHUTDOWN] All trainings stopped")
 
-app = FastAPI()
+app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -36,7 +36,9 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
+
 ensure_directories()
 
 app.include_router(dataset_router.router)

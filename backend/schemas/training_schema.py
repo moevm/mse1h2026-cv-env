@@ -32,6 +32,7 @@ class DatasetInfoSchema(BaseModel):
     workspace_path: Optional[str] = None
     active_folders: List[str] = Field(default_factory=list)
     classes: List[str] = Field(default_factory=list)
+    use_coco8: bool = False
 
 class TrainingRequestSchema(TrainingParamsSchema):
     augmentations: AugmentationSchema

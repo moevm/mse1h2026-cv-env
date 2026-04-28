@@ -23,6 +23,7 @@ function TrainingView({ collection, currentVersionId }) {
   const [params, setParams] = useState({
     model: "yolov8n",
     modelName: "",
+    use_coco8: false,
     epochs: 100,
     batch: 16,
     imgsz: 640,
@@ -266,7 +267,7 @@ function TrainingView({ collection, currentVersionId }) {
       ? collection.folders.filter(f => f.isEnabled).map(f => f.name)
       : [];
 
-    if (activeFolderNames.length === 0) {
+    if (activeFolderNames.length === 0 && !params.use_coco8) {
       addLog("Нет активных папок для обучения. Отметьте папки галочками.", "warning");
       alert("Выберите хотя бы одну папку для обучения в меню слева.");
       return;
@@ -282,7 +283,8 @@ function TrainingView({ collection, currentVersionId }) {
         versionName: currentVersion?.name || `Version ${currentVersionId || "unknown"}`,
         workspace_path: collection.workspacePath,
         active_folders: activeFolderNames,
-        classes: []
+        classes: [],
+        use_coco8: params.use_coco8
       },
       modelName: params.modelName && typeof params.modelName === 'string' 
         ? params.modelName
@@ -365,6 +367,15 @@ function TrainingView({ collection, currentVersionId }) {
               <span className="validation-text">Проверка модели...</span>
             </div>
           )}
+
+          <div className="param-group checkbox-group" style={{ marginTop: '10px', background: 'rgba(52, 152, 219, 0.1)', padding: '8px', borderRadius: '4px' }}>
+            <label style={{ color: '#3498db', fontWeight: 'bold' }}>COCO8:</label>
+            <input
+              type="checkbox"
+              checked={params.use_coco8}
+              onChange={(e) => handleChange("use_coco8", e.target.checked)}
+            />
+          </div>
           
           <div className="param-group">
             <label>epochs:</label>
