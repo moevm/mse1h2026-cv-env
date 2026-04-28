@@ -106,7 +106,7 @@ def _collect_image_entries(dataset_name: str, dataset_dir: str, workspace_path: 
                     "relativePath": relative_in_group,
                     "storedPath": stored_image_path,
                     "split": split_name,
-                    "url": f"/api/datasets/{quote(dataset_name)}/files/{_quote_path_parts(stored_image_path)}{wp_param}",
+                    "url": f"/api/datasets/files/{_quote_path_parts(stored_image_path)}{wp_param}",
                     "annotationText": annotation_text,
                 }
             )
@@ -175,27 +175,26 @@ def list_datasets(workspace_path: str = Query(None)):
 
     return {"datasets": datasets}
 
-@router.delete("/{dataset_name}")
-def delete_dataset(dataset_name: str, workspace_path: str = Query(None)):
+@router.delete("/clear")
+def delete_workspace_datasets(workspace_path: str = Query(None)):
     datasets_dir = get_project_paths(workspace_path)["datasets"]
-    safe_dataset_name = _sanitize_dataset_name(dataset_name)
-    dataset_dir = os.path.join(datasets_dir, safe_dataset_name)
+    if os.path.isdir(datasets_dir):
+        shutil.rmtree(datasets_dir, ignore_errors=True)
+    return {"status": "success", "message": "Данные воркспейса очищены"}
 
-    if not os.path.isdir(dataset_dir):
-        raise HTTPException(status_code=404, detail="Коллекция не найдена")
-
-    shutil.rmtree(dataset_dir)
-    return {"status": "success", "dataset_name": safe_dataset_name}
-
-@router.get("/{dataset_name}/files/{file_path:path}")
-def get_dataset_file(dataset_name: str, file_path: str, workspace_path: str = Query(None)):
+@router.get("/files/{file_path:path}")
+def get_dataset_file(file_path: str, workspace_path: str = Query(None)):
     datasets_dir = get_project_paths(workspace_path)["datasets"]
-    file_path = _resolve_dataset_subpath(datasets_dir, dataset_name, "", file_path)
 
-    if not os.path.isfile(file_path):
-        raise HTTPException(status_code=404, detail="Изображение не найдено")
+    full_path = os.path.normpath(os.path.join(datasets_dir, file_path))
+    
+    if not full_path.startswith(os.path.abspath(datasets_dir)):
+         raise HTTPException(status_code=400, detail="Некорректный путь")
 
-    return FileResponse(file_path, media_type=_detect_media_type(file_path), filename=Path(file_path).name)
+    if not os.path.isfile(full_path):
+        raise HTTPException(status_code=404, detail="Файл не найден")
+
+    return FileResponse(full_path, media_type=_detect_media_type(full_path))
 
 @router.post("/export")
 async def export_dataset(

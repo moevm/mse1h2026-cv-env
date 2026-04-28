@@ -137,7 +137,7 @@ function useCollections() {
     if (!collection) return false;
 
     try {
-      await deleteStoredDataset(collection.name, collection.workspacePath);
+      await deleteStoredDataset(collection.workspacePath);
     } catch (e) {
       console.warn("Папка на бэкенде не найдена или уже удалена", e);
     }

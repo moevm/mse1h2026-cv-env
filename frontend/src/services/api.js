@@ -1,4 +1,4 @@
-const API_BASE_URL = "http://localhost:8000";
+export const API_BASE_URL = "http://localhost:8000";
 
 const buildQuery = (workspacePath) => {
   return workspacePath ? `?workspace_path=${encodeURIComponent(workspacePath)}` : "";
@@ -146,13 +146,10 @@ export const exportDataset = async ({ collectionName, workspacePath, subFolderNa
   return await res.json();
 };
 
-export const deleteStoredDataset = async (datasetName, workspacePath) => {
-  const res = await fetch(`${API_BASE_URL}/api/datasets/${encodeURIComponent(datasetName)}${buildQuery(workspacePath)}`, {
+export const deleteStoredDataset = async (workspacePath) => {
+  const res = await fetch(`${API_BASE_URL}/api/datasets/clear${buildQuery(workspacePath)}`, {
     method: "DELETE",
   });
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({}));
-    throw new Error(error.detail || "Ошибка удаления коллекции");
-  }
+  if (!res.ok) throw new Error("Ошибка удаления данных");
   return await res.json();
 };
