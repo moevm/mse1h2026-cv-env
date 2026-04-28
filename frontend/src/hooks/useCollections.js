@@ -214,6 +214,7 @@ function useCollections() {
     const payload = {
       id: collection.id,
       name: collection.name,
+      created_at: collection.date,
       path: collection.workspacePath,
       folders: serializeFolders(collection.folders || []),
       classes: collection.projectClasses || [],
