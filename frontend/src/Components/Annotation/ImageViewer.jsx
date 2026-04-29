@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import ImageAnnotator from "./ImageAnnotator";
 import { parseTxtAnnotations } from "../../utils/txtAnnotationParser";
-import { loadAnnotationFromBackend } from "../../services/api";
+import { getImageUrl } from "../../services/api.js";
 import "../../styles/AnnotationView.css";
 
 function ImageViewer({
@@ -16,8 +16,6 @@ function ImageViewer({
 }) {
   const [currentUrl, setCurrentUrl] = useState(null);
   const [txtAnnotations, setTxtAnnotations] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const urlsRef = useRef([]);
 
   // Функция для преобразования индексов классов в ID
   const convertIndexToClassId = (classIndex, classes) => {
@@ -50,90 +48,33 @@ function ImageViewer({
 
     let isActive = true;
     
-    // Получаем URL изображения
-    let imageUrl = null;
-    if (image.url) {
-      imageUrl = image.url.startsWith('http') ? image.url : `http://localhost:8000${image.url}`;
-    } else if (image.file) {
-      imageUrl = URL.createObjectURL(image.file);
-      urlsRef.current.push(imageUrl);
-    } else if (collection?.name && image.uuid) {
-      imageUrl = `http://localhost:8000/api/datasets/${collection.name}/files/images/${image.uuid}.jpg`;
-    }
-    
-    setCurrentUrl(imageUrl);
+    const newUrl = image.url; 
+    setCurrentUrl(newUrl);
 
     const loadTxtAnnotations = async () => {
-      setIsLoading(true);
-      
+      const hasInlineText = typeof image.annotationText === "string" && image.annotationText.length > 0;
+      if (!hasInlineText && !image.annotationFile) {
+        if (isActive) setTxtAnnotations([]);
+        return;
+      }
+
       try {
-        // Получаем текущие классы из annotationsManager
-        const currentClasses = annotationsManager.classes;
-        
-        // 1. Сначала пробуем загрузить с бэкенда
-        let backendContent = null;
-        if (collection?.name && image.uuid) {
-          try {
-            const backendData = await loadAnnotationFromBackend(collection.name, image.uuid);
-            if (backendData.content && backendData.content.trim()) {
-              backendContent = backendData.content;
-            }
-          } catch (error) {
-            console.error("Failed to load annotation from backend:", error);
-          }
-        }
-        
-        // Получаем размеры изображения для нормализации координат
-        const imageSize = await new Promise((resolve, reject) => {
+        const txtPromise = hasInlineText 
+          ? Promise.resolve(image.annotationText) 
+          : fetch(getImageUrl(image.annotationFile.absolute_path)).then(res => res.text());
+
+        const sizePromise = new Promise((resolve, reject) => {
           const previewImage = new Image();
-          previewImage.onload = () => {
-            resolve({ width: previewImage.naturalWidth, height: previewImage.naturalHeight });
-          };
+          previewImage.onload = () => resolve({ width: previewImage.naturalWidth, height: previewImage.naturalHeight });
           previewImage.onerror = reject;
           previewImage.src = imageUrl;
         });
         
         if (!isActive) return;
-        
-        let parsedAnnotations = [];
-        let contentSource = null;
-        
-        // 2. Если есть на бэкенде - используем его
-        if (backendContent) {
-          parsedAnnotations = parseTxtAnnotations(backendContent, imageSize.width, imageSize.height);
-          contentSource = "backend";
-        }
-        // 3. Иначе пробуем загрузить из inline annotationText
-        else if (image.annotationText && image.annotationText.trim()) {
-          parsedAnnotations = parseTxtAnnotations(image.annotationText, imageSize.width, imageSize.height);
-          contentSource = "annotationText";
-        }
-        // 4. Иначе пробуем загрузить из annotationFile (для локальной загрузки)
-        else if (image.annotationFile) {
-          const txtContent = await image.annotationFile.text();
-          if (txtContent && txtContent.trim()) {
-            parsedAnnotations = parseTxtAnnotations(txtContent, imageSize.width, imageSize.height);
-            contentSource = "annotationFile";
-          }
-        }
-        
-        if (parsedAnnotations.length > 0) {
-          // Преобразуем индексы классов в ID
-          const convertedAnnotations = convertAnnotationsIndicesToIds(parsedAnnotations, currentClasses);
-          console.log(`Загружено ${convertedAnnotations.length} аннотаций из ${contentSource}`);
-          setTxtAnnotations(convertedAnnotations);
-        } else {
-          setTxtAnnotations([]);
-        }
+        setTxtAnnotations(parseTxtAnnotations(txtContent, imageSize.width, imageSize.height));
       } catch (error) {
         console.error("Не удалось прочитать txt-разметку:", error);
-        if (isActive) {
-          setTxtAnnotations([]);
-        }
-      } finally {
-        if (isActive) {
-          setIsLoading(false);
-        }
+        if (isActive) setTxtAnnotations([]);
       }
     };
 
@@ -143,14 +84,6 @@ function ImageViewer({
       isActive = false;
     };
   }, [image, collection, annotationsManager.classes]);
-
-  // Очистка URL-объектов при размонтировании
-  useEffect(() => {
-    return () => {
-      urlsRef.current.forEach((url) => URL.revokeObjectURL(url));
-      urlsRef.current = [];
-    };
-  }, []);
 
   if (!image) return null;
 

@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from core.paths import ensure_directories
-from api import dataset_router, augmentation_router, training_router
+from api import dataset_router, augmentation_router, training_router, project_router
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
 from contextlib import asynccontextmanager
@@ -28,7 +28,7 @@ async def lifespan(app: FastAPI):
     
     print("[SHUTDOWN] All trainings stopped")
 
-app = FastAPI()
+app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -43,9 +43,12 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
+
 ensure_directories()
 
 app.include_router(dataset_router.router)
 app.include_router(augmentation_router.router)
 app.include_router(training_router.router)
+app.include_router(project_router.router)

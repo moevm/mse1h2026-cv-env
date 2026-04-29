@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import useObjectUrl from "../../hooks/useObjectUrl";
+import React, { useState, useEffect, useMemo } from "react";
+import { getDisabledFolderPaths } from "../../utils/fileSystem";
 import { getAugmentations, saveAugmentations } from "../../services/api";
 import "../../styles/AugmentationView.css";
 
@@ -25,52 +25,25 @@ function AugmentationView({ collection, versions, currentVersionId }) {
   });
 
   const currentVersion = versions.find((v) => v.id === currentVersionId);
-  const images = currentVersion?.images || collection?.images || [];
 
-  // Функция для получения URL изображения (работает и с file, и с url)
-  const getImageUrl = (image) => {
-    if (!image) return null;
-    // Если есть file объект (локальная загрузка)
-    if (image.file) {
-      return URL.createObjectURL(image.file);
-    }
-    // Если есть url от бэкенда
-    if (image.url) {
-      // Если url уже полный или начинается с http
-      if (image.url.startsWith('http')) {
-        return image.url;
-      }
-      // Добавляем базовый URL бэкенда
-      return `http://localhost:8000${image.url}`;
-    }
-    // Fallback: строим URL из collection и uuid
-    if (collection?.name && image.uuid) {
-      return `http://localhost:8000/api/datasets/${collection.name}/files/images/${image.uuid}.jpg`;
-    }
-    // Последний fallback: используем storedPath
-    if (collection?.name && image.storedPath) {
-      return `http://localhost:8000/api/datasets/${collection.name}/files/${image.storedPath}`;
-    }
-    return null;
-  };
+  const ignoredPaths = useMemo(() => {
+    return collection?.folders ? getDisabledFolderPaths(collection.folders) : [];
+  }, [collection?.folders]);
 
-  // Получаем URL для оригинального изображения
-  const originalImageUrl = getImageUrl(originalImage);
-  // Для аугментированного используем обычный URL (не useObjectUrl, так как это не File)
-  const augmentedImageUrl = getImageUrl(augmentedImage);
+  const images = useMemo(() => {
+    const baseImages = currentVersion?.images || collection?.images || [];
+    if (ignoredPaths.length === 0) return baseImages;
 
-  // Очищаем ObjectURL при размонтировании
-  useEffect(() => {
-    return () => {
-      // Очищаем все созданные ObjectURL
-      if (originalImage?.file) {
-        URL.revokeObjectURL(getImageUrl(originalImage));
-      }
-    };
-  }, [originalImage]);
+    return baseImages.filter(img => {
+      return !ignoredPaths.some(ignoredPath => img.relativePath.startsWith(ignoredPath + '/'));
+    });
+  }, [collection?.images, currentVersion?.images, ignoredPaths]);
+
+  const originalUrl = originalImage?.url;
+  const augmentedUrl = augmentedImage?.url;
 
   useEffect(() => {
-    getAugmentations()
+    getAugmentations(collection.workspacePath)
       .then(setParams)
       .catch(() => console.log("Используются дефолтные параметры"));
   }, []);
@@ -152,7 +125,7 @@ function AugmentationView({ collection, versions, currentVersionId }) {
 
   const handleApply = async () => {
     try {
-      await saveAugmentations(params);
+      await saveAugmentations(params, collection.workspacePath);
       alert("Сохранено в YAML ");
     } catch (e) {
       console.error(e);
