@@ -4,26 +4,49 @@ import "../../styles/Layout.css";
 const FolderTree = ({ nodes, onToggle }) => {
   if (!nodes || nodes.length === 0) return null;
 
+  const checkAllEnabled = (node) => {
+    if (!node.isEnabled) return false;
+    if (!node.children || node.children.length === 0) return true;
+    return node.children.every(child => checkAllEnabled(child));
+  };
+
   return (
     <ul className="folder-tree-list">
-      {nodes.map((node) => (
-        <li key={node.path} className="folder-tree-item">
-          <div className="folder-tree-row">
-            <input
-              type="checkbox"
-              checked={node.isEnabled}
-              onChange={(e) => onToggle(node.path, e.target.checked)}
-            />
-            <span className="folder-icon">{node.isEnabled ? "📂" : "📁"}</span>
-            <span className={`folder-name ${!node.isEnabled ? "disabled" : ""}`}>
-              {node.name}
-            </span>
-          </div>
-          {node.children && node.children.length > 0 && (
-            <FolderTree nodes={node.children} onToggle={onToggle} />
-          )}
-        </li>
-      ))}
+      {nodes.map((node) => {
+        const isAllEnabled = checkAllEnabled(node);
+        const isIndeterminate = node.isEnabled && !isAllEnabled;
+        const isChecked = isAllEnabled;
+
+        return (
+          <li key={node.path} className="folder-tree-item">
+            <div className="folder-tree-row">
+              <input
+                type="checkbox"
+                ref={el => {
+                  if (el) {
+                    el.checked = isChecked;
+                    el.indeterminate = isIndeterminate;
+                  }
+                }}
+                onChange={() => {
+                  if (isIndeterminate || !isChecked) {
+                    onToggle(node.path, true);
+                  } else {
+                    onToggle(node.path, false);
+                  }
+                }}
+              />
+              <span className="folder-icon">{node.isEnabled ? "📂" : "📁"}</span>
+              <span className={`folder-name ${!node.isEnabled ? "disabled" : ""}`}>
+                {node.name}
+              </span>
+            </div>
+            {node.children && node.children.length > 0 && (
+              <FolderTree nodes={node.children} onToggle={onToggle} />
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 };
@@ -47,7 +70,7 @@ function Sidebar({
 
       <div className="sidebar-actions">
         <button className="new-collection-btn" onClick={onAddCollection}>
-          + Новый проект
+          + Добавить проект
         </button>
       </div>
 

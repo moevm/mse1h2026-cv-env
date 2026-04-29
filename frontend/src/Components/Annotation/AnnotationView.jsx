@@ -3,8 +3,8 @@ import ImageGallery from "./ImageGallery";
 import ImageViewer from "./ImageViewer";
 
 import useAnnotations from "../../hooks/useAnnotations";
-import { getDisabledFolderPaths } from "../../utils/fileSystem";
-import { exportDataset } from "../../services/api";
+import { getDisabledFolderPaths, serializeFolders} from "../../utils/fileSystem";
+import { exportDataset, updateProjectOnBackend } from "../../services/api";
 import { annotationToYoloLine } from "../../utils/yolo";
 
 import "../../styles/AnnotationView.css";
@@ -13,46 +13,12 @@ const DEFAULT_TRAIN_SPLIT_PERCENT = 80;
 
 function getImageSize(image) {
   return new Promise((resolve, reject) => {
-    const sourceUrl = image.url || URL.createObjectURL(image.file);
-    const shouldRevoke = !image.url;
     const previewImage = new Image();
 
-    previewImage.onload = () => {
-      resolve({ width: previewImage.naturalWidth, height: previewImage.naturalHeight });
-      if (shouldRevoke) {
-        URL.revokeObjectURL(sourceUrl);
-      }
-    };
+    previewImage.onload = () => resolve({ width: previewImage.naturalWidth, height: previewImage.naturalHeight });
+    previewImage.onerror = (error) => reject(error);
 
-    previewImage.onerror = (error) => {
-      if (shouldRevoke) {
-        URL.revokeObjectURL(sourceUrl);
-      }
-      reject(error);
-    };
-
-    previewImage.src = sourceUrl;
-  });
-}
-
-async function ensureImageFile(image) {
-  if (image.file instanceof File) {
-    return image.file;
-  }
-
-  if (!image.url) {
-    throw new Error(`Не найден источник изображения ${image.name}`);
-  }
-
-  const response = await fetch(image.url);
-  if (!response.ok) {
-    throw new Error(`Не удалось загрузить изображение ${image.name}`);
-  }
-
-  const blob = await response.blob();
-  return new File([blob], image.name, {
-    type: blob.type || image.type || "application/octet-stream",
-    lastModified: Date.now(),
+    previewImage.src = image.url;
   });
 }
 
@@ -100,6 +66,24 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
     setShowViewer(false);
     setSaveMessage("");
   }, [collection?.id, currentVersionId]);
+
+  useEffect(() => {
+    if (!collection || !annotationsManager.classes.length) return;
+
+    const timeoutId = setTimeout(() => {
+      const payload = {
+        id: collection.id,
+        name: collection.name,
+        path: collection.workspacePath,
+        folders: collection.folders ? serializeFolders(collection.folders) : [],
+        classes: annotationsManager.classes
+      };
+
+      updateProjectOnBackend(payload).catch(console.error);
+    }, 1000);
+
+    return () => clearTimeout(timeoutId);
+  }, [annotationsManager.classes, collection]);
 
   const currentVersion = versions.find((v) => v.id === currentVersionId);
 
@@ -149,7 +133,8 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
       const allUsedClassIds = new Set();
 
       for (const image of images) {
-        const [size, imageFile] = await Promise.all([getImageSize(image), ensureImageFile(image)]);
+        const size = await getImageSize(image);
+        
         const existingTxt = image.annotationFile
           ? await image.annotationFile.text()
           : image.annotationText || "";
@@ -178,7 +163,7 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
         ].join("\n");
 
         items.push({
-          file: imageFile,
+          absolutePath: image.file.absolute_path,
           relativePath: image.relativePath,
           annotationTxt: mergedLines,
         });
@@ -201,30 +186,25 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
       let foldersSaved = 0;
       let lastResponse = null;
 
-      // Отправляем каждую папку отдельным запросом
       for (const folder of activeFolders) {
-        // Выбираем только те файлы, которые лежат в этой корневой папке
         const folderItemsRaw = items.filter(item => 
           item.relativePath.startsWith(folder.path + '/') || item.relativePath === folder.path
         );
 
         if (folderItemsRaw.length === 0) continue;
 
-        // ОЧИЩАЕМ ПУТИ: отрезаем виртуальное имя корневой папки
         const folderItemsCleaned = folderItemsRaw.map(item => {
           let cleanPath = item.relativePath;
           
-          // Если путь начинается с "имя_корневой_папки/", отрезаем эту часть
           if (cleanPath.startsWith(folder.path + '/')) {
             cleanPath = cleanPath.substring(folder.path.length + 1);
           } else if (cleanPath === folder.path) {
-            // Если это файл в самом корне без подпапок
             cleanPath = cleanPath.split('/').pop();
           }
 
           return {
             ...item,
-            relativePath: cleanPath // Перезаписываем путь на чистый
+            relativePath: cleanPath
           };
         });
 
@@ -247,6 +227,7 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
           datasetYamlPath: lastResponse.dataset_yaml_path,
           trainSplitPercent: lastResponse.train_percent,
           valSplitPercent: lastResponse.val_percent,
+          projectClasses: annotationsManager.classes
         });
         setSaveMessage(`Успешно! Экспортировано папок: ${foldersSaved}`);
       } else {

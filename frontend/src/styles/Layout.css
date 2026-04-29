@@ -231,7 +231,7 @@
 .modal-overlay {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.5); /* Чуть более легкий темный фон */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -240,32 +240,79 @@
 
 .new-project-modal {
   background: #ffffff;
-  padding: 24px;
-  border-radius: 8px;
-  width: 400px;
+  padding: 30px;
+  border-radius: 12px;
+  width: 450px;
   color: #333333;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  box-shadow: 0 10px 25px rgba(0,0,0,0.15);
 }
 
-.new-project-modal h3 {
-  margin-top: 0;
-  margin-bottom: 8px;
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
 }
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 1.4rem;
+  color: #1e293b;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.modal-header h3::before {
+  content: "";
+  display: block;
+  width: 4px;
+  height: 24px;
+  background-color: #4f46e5;
+  border-radius: 2px;
+}
+
+.popup-close {
+  border: none;
+  background: none;
+  font-size: 28px;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: color 0.2s;
+  line-height: 1;
+}
+
+.popup-close:hover { color: #334155; }
 
 .new-project-modal .hint {
-  font-size: 0.85rem;
-  color: #aaa;
-  margin-bottom: 20px;
+  font-size: 0.9rem;
+  color: #64748b;
+  margin-bottom: 24px;
+  line-height: 1.5;
+}
+
+.new-project-modal .form-group label {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #334155;
+  margin-bottom: 6px;
 }
 
 .new-project-modal input {
   width: 100%;
-  padding: 10px;
+  padding: 12px 16px;
   margin-top: 8px;
-  border-radius: 4px;
-  border: 1px solid #ccc;
+  border-radius: 8px;
+  border: 1px solid #818cf8;
   background: #ffffff;
   color: #333333;
+  font-size: 0.95rem;
+  transition: box-shadow 0.2s;
+}
+
+.new-project-modal input:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2);
 }
 
 .modal-actions {
@@ -276,12 +323,37 @@
 }
 
 .modal-actions button {
-  padding: 8px 16px;
-  border-radius: 4px;
+  padding: 10px 20px;
+  border-radius: 6px;
   border: none;
   cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 500;
+  transition: background-color 0.2s;
 }
 
-.cancel-btn { background: #444; color: white; }
-.primary-btn { background: #4f46e5; color: white; font-weight: bold; }
+.cancel-btn { background: #475569; color: white; }
+.cancel-btn:hover { background: #334155; }
+
+.primary-btn { background: #4f46e5; color: white; }
 .primary-btn:hover { background: #4338ca; }
+
+.modal-menu-btn {
+  width: 100%;
+  padding: 14px;
+  background: #4f46e5;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 2px 4px rgba(79, 70, 229, 0.2);
+}
+
+.modal-menu-btn:hover {
+  background: #4338ca;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px rgba(79, 70, 229, 0.3);
+}

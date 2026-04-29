@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import ImageAnnotator from "./ImageAnnotator";
 import { parseTxtAnnotations } from "../../utils/txtAnnotationParser";
+import { getImageUrl } from "../../services/api.js";
 import "../../styles/AnnotationView.css";
 
 function ImageViewer({
@@ -14,34 +15,30 @@ function ImageViewer({
 }) {
   const [currentUrl, setCurrentUrl] = useState(null);
   const [txtAnnotations, setTxtAnnotations] = useState([]);
-  const urlsRef = useRef([]);
 
   useEffect(() => {
     if (!image) return;
 
     let isActive = true;
-    const newUrl = image.url || URL.createObjectURL(image.file);
-    if (!image.url) {
-      urlsRef.current.push(newUrl);
-    }
+    
+    const newUrl = image.url; 
     setCurrentUrl(newUrl);
 
     const loadTxtAnnotations = async () => {
       const hasInlineText = typeof image.annotationText === "string" && image.annotationText.length > 0;
       if (!hasInlineText && !image.annotationFile) {
-        if (isActive) {
-          setTxtAnnotations([]);
-        }
+        if (isActive) setTxtAnnotations([]);
         return;
       }
 
       try {
-        const txtPromise = hasInlineText ? Promise.resolve(image.annotationText) : image.annotationFile.text();
+        const txtPromise = hasInlineText 
+          ? Promise.resolve(image.annotationText) 
+          : fetch(getImageUrl(image.annotationFile.absolute_path)).then(res => res.text());
+
         const sizePromise = new Promise((resolve, reject) => {
           const previewImage = new Image();
-          previewImage.onload = () => {
-            resolve({ width: previewImage.naturalWidth, height: previewImage.naturalHeight });
-          };
+          previewImage.onload = () => resolve({ width: previewImage.naturalWidth, height: previewImage.naturalHeight });
           previewImage.onerror = reject;
           previewImage.src = newUrl;
         });
@@ -49,13 +46,10 @@ function ImageViewer({
         const [txtContent, imageSize] = await Promise.all([txtPromise, sizePromise]);
 
         if (!isActive) return;
-
         setTxtAnnotations(parseTxtAnnotations(txtContent, imageSize.width, imageSize.height));
       } catch (error) {
         console.error("Не удалось прочитать txt-разметку:", error);
-        if (isActive) {
-          setTxtAnnotations([]);
-        }
+        if (isActive) setTxtAnnotations([]);
       }
     };
 
@@ -65,13 +59,6 @@ function ImageViewer({
       isActive = false;
     };
   }, [image]);
-
-  useEffect(() => {
-    return () => {
-      urlsRef.current.forEach((url) => URL.revokeObjectURL(url));
-      urlsRef.current = [];
-    };
-  }, []);
 
   if (!image) return null;
 

@@ -7,9 +7,9 @@ from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import quote
-
 import yaml
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, Query
+from schemas.dataset_schema import ExportPayload
 from fastapi.responses import FileResponse
 
 from core.paths import get_project_paths, ensure_project_directories
@@ -197,24 +197,13 @@ def get_dataset_file(file_path: str, workspace_path: str = Query(None)):
     return FileResponse(full_path, media_type=_detect_media_type(full_path))
 
 @router.post("/export")
-async def export_dataset(
-    collection_name: str = Form(...),
-    sub_folder_name: str = Form("default"),
-    workspace_path: str = Form(""),
-    metadata_json: str = Form(...),
-    files: list[UploadFile] = File(...),
-):
-    try:
-        metadata = json.loads(metadata_json)
-    except json.JSONDecodeError as exc:
-        raise HTTPException(status_code=400, detail=f"Некорректный metadata_json: {exc}") from exc
+async def export_dataset(payload: ExportPayload):
+    classes = payload.classes
+    items = payload.items
+    train_percent = _clamp_train_percent(payload.trainPercent)
 
-    classes = metadata.get("classes") or []
-    items = metadata.get("items") or []
-    train_percent = _clamp_train_percent(metadata.get("trainPercent"))
-
-    project_paths = ensure_project_directories(workspace_path)
-    safe_subfolder = _sanitize_dataset_name(sub_folder_name)
+    project_paths = ensure_project_directories(payload.workspace_path)
+    safe_subfolder = _sanitize_dataset_name(payload.sub_folder_name)
     dataset_dir = os.path.join(project_paths["datasets"], safe_subfolder)
     dataset_abs_path = os.path.abspath(dataset_dir)
 
@@ -241,8 +230,7 @@ async def export_dataset(
         split_counts = {"train": 0, "val": 0}
 
         for item in split_plan:
-            upload_index = item.get("uploadIndex")
-            upload = files[upload_index]
+            source_abs_path = item.get("absolutePath")
             relative_path = item["normalizedRelativePath"]
             split_name = item["split"]
             annotation_txt = (item.get("annotationTxt") or "").strip()
@@ -252,9 +240,10 @@ async def export_dataset(
             image_path.parent.mkdir(parents=True, exist_ok=True)
             label_path.parent.mkdir(parents=True, exist_ok=True)
 
-            file_bytes = await upload.read()
-            with open(image_path, "wb") as image_file:
-                image_file.write(file_bytes)
+            if source_abs_path and os.path.exists(source_abs_path):
+                shutil.copy2(source_abs_path, image_path)
+            else:
+                raise ValueError(f"Исходный файл не найден: {source_abs_path}")
 
             with open(label_path, "w", encoding="utf-8") as label_file:
                 label_file.write(annotation_txt)

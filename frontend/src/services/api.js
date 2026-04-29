@@ -1,7 +1,18 @@
 export const API_BASE_URL = "http://localhost:8000";
 
-const buildQuery = (workspacePath) => {
-  return workspacePath ? `?workspace_path=${encodeURIComponent(workspacePath)}` : "";
+const buildQuery = (value, key = "workspace_path") => {
+  return value ? `?${key}=${encodeURIComponent(value)}` : "";
+};
+
+export const scanFolderOnBackend = async (path, virtualName) => {
+  const res = await fetch(`${API_BASE_URL}/api/projects/scan-folder?path=${encodeURIComponent(path)}&virtual_name=${encodeURIComponent(virtualName)}`);
+  if (!res.ok) throw new Error("Ошибка сканирования папки");
+  return await res.json();
+};
+
+export const getImageUrl = (absolutePath) => {
+  if (!absolutePath) return null;
+  return `${API_BASE_URL}/api/utils/image?path=${encodeURIComponent(absolutePath)}`;
 };
 
 // Project
@@ -12,12 +23,40 @@ export const pickWorkspacePath = async () => {
   return data.path;
 };
 
-export const initProjectOnBackend = async (projectName, workspacePath) => {
+export const initProjectOnBackend = async (payload) => {
   const res = await fetch(`${API_BASE_URL}/api/projects/init`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: projectName, path: workspacePath }),
+    body: JSON.stringify(payload),
   });
+  
+  if (!res.ok) {
+    const errorData = await res.json(); 
+    console.error("Детали ошибки 422:", errorData);
+    throw new Error(JSON.stringify(errorData.detail) || "Ошибка инициализации проекта");
+  }
+  
+  return await res.json();
+};
+
+export const updateProjectOnBackend = async (payload) => {
+  const res = await fetch(`${API_BASE_URL}/api/projects/update`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error("Ошибка обновления YAML");
+  return await res.json();
+};
+
+export const loadProjectFromBackend = async (workspacePath) => {
+  const res = await fetch(`${API_BASE_URL}/api/projects/load${buildQuery(workspacePath, "path")}`);
+  
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.detail || "Не удалось загрузить проект");
+  }
+  
   return await res.json();
 };
 
@@ -110,33 +149,25 @@ export const getStoredDatasets = async (workspacePath) => {
 };
 
 export const exportDataset = async ({ collectionName, workspacePath, subFolderName, classes, items, trainPercent }) => {
-  const formData = new FormData();
-  formData.append("collection_name", collectionName);
-  
-  formData.append("workspace_path", workspacePath || "");
-
-  formData.append("sub_folder_name", subFolderName || "default");
-
-  const metadata = {
+  const payload = {
     collection_name: collectionName,
+    workspace_path: workspacePath || "",
+    sub_folder_name: subFolderName || "default",
     trainPercent,
     classes,
-    items: items.map((item, uploadIndex) => ({
-      uploadIndex,
-      originalFileName: item.file.name,
+    items: items.map((item) => ({
+      absolutePath: item.absolutePath,
       relativePath: item.relativePath,
       annotationTxt: item.annotationTxt,
     })),
   };
 
-  formData.append("metadata_json", JSON.stringify(metadata));
-  items.forEach((item) => {
-    formData.append("files", item.file, item.file.name);
-  });
-
   const res = await fetch(`${API_BASE_URL}/api/datasets/export`, {
     method: "POST",
-    body: formData,
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
   });
 
   if (!res.ok) {
