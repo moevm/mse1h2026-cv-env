@@ -170,6 +170,12 @@ async def autosave_annotation(payload: AutosavePayload):
         
     return {"status": "success"}
 
+@router.delete("/clear")
+def delete_workspace_datasets(workspace_path: str = Query(None)):
+    datasets_dir = get_project_paths(workspace_path)["datasets"]
+    if os.path.isdir(datasets_dir):
+        shutil.rmtree(datasets_dir, ignore_errors=True)
+    return {"status": "success", "message": "Данные воркспейса очищены"}
 
 @router.get("/workspace-classes")
 async def get_workspace_classes(workspace_path: str = Query(...)):
@@ -181,6 +187,7 @@ async def get_workspace_classes(workspace_path: str = Query(...)):
         return {"classes": classes}
     return {"classes": []}
 
+    return FileResponse(full_path, media_type=_detect_media_type(full_path))
 
 @router.post("/export")
 async def export_dataset(payload: ExportPayload):
