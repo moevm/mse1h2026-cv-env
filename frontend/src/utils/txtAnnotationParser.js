@@ -71,9 +71,7 @@ export function parseTxtAnnotations(txtContent, imageWidth, imageHeight) {
       return {
         id: `txt-${rawClassId}-${index}`,
         type: 'rectangle',
-        classId: rawClassId,
-        className: `Class ${rawClassId}`,
-        color: getColorByClassKey(rawClassId),
+        classId: rawClassId, 
         x,
         y,
         width,

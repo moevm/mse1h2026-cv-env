@@ -1,217 +1,215 @@
 import { useCallback, useEffect, useState } from "react";
-import { getAllFilesFromDirectory } from "../utils/fileSystem";
-import { deleteStoredDataset, getStoredDatasets, createRawDataset } from "../services/api";
+import { serializeFolders } from "../utils/fileSystem";
+import { saveCollections, loadCollections } from "../utils/persistence";
+import { deleteStoredDataset, getStoredDatasets, updateProjectOnBackend, scanFolderOnBackend, getImageUrl } from "../services/api";
 
 const DEFAULT_TRAIN_SPLIT_PERCENT = 80;
+const DEFAULT_VAL_SPLIT_PERCENT = 10;
+const DEFAULT_TEST_SPLIT_PERCENT = 10;
 
-function buildImagesWithAnnotations(files) {
-  const allFiles = Array.from(files);
-  const imageFiles = allFiles.filter((file) => file.type.startsWith("image/"));
-  const txtFiles = allFiles.filter(
-    (file) => file.name.toLowerCase().endsWith(".txt") && !file.type.startsWith("image/"),
-  );
-
-  const txtByStem = new Map(
-    txtFiles.map((file) => [
-      (file.relativePath || file.name)
-        .replace(/\\/g, "/")
-        .replace(/\.txt$/i, "")
-        .toLowerCase(),
-      file,
-    ]),
-  );
-
-  const sortedImageFiles = imageFiles.sort((a, b) =>
-    (a.webkitRelativePath || a.relativePath || a.name).localeCompare(
-      b.webkitRelativePath || b.relativePath || b.name,
-      undefined,
-      { numeric: true, sensitivity: "base" },
-    ),
-  );
-
-  return sortedImageFiles.map((file) => {
-    const relativePath = file.webkitRelativePath || file.relativePath || file.name;
-    const stemKey = relativePath.replace(/\\/g, "/").replace(/\.[^.]+$/u, "").toLowerCase();
-
-    return {
-      file,
-      url: null,
-      name: file.name,
-      type: file.type,
-      size: file.size,
-      relativePath,
-      split: null,
-      annotationFile: txtByStem.get(stemKey) || null,
-      annotationText: null,
-    };
+function mergeTrees(oldNodes = [], newNodes = []) {
+  return newNodes.map(newNode => {
+    const oldNode = oldNodes.find(n => n.path === newNode.path);
+    if (oldNode) {
+      return { ...newNode, isEnabled: oldNode.isEnabled, children: mergeTrees(oldNode.children, newNode.children) };
+    }
+    return { ...newNode, isEnabled: true };
   });
 }
 
-function buildStoredCollection(dataset) {
-  const images = Array.isArray(dataset.images)
-    ? dataset.images.map((image) => ({
-        file: null,
-        url: image.url ? `http://localhost:8000${image.url}` : null,
-        name: image.name,  
-        originalName: image.originalName || image.name,
-        uuid: image.uuid || image.storedPath?.split('/').pop()?.replace(/\.[^/.]+$/, '') || image.name,
-        type: "image/*",
-        size: null,
-        relativePath: image.relativePath || image.name,
-        storedPath: image.storedPath || null,
-        split: image.split || null,
-        annotationFile: null,
-        annotationText: image.annotationText || "",
-      }))
-    : [];
+function buildImagesWithAnnotations(files, loadedAnnotations = {}) {
+  const imageFiles = files.filter((f) => f.type.startsWith("image/"));
+  const txtFiles = files.filter((f) => f.type === "text/plain");
 
-  const trainSplitPercent = Number.isFinite(dataset.trainSplitPercent)
-    ? dataset.trainSplitPercent
-    : DEFAULT_TRAIN_SPLIT_PERCENT;
+  const txtByStem = new Map(
+    txtFiles.map((file) => [file.relativePath.replace(/\\/g, "/").replace(/\.txt$/i, "").toLowerCase(), file])
+  );
 
-  return {
-    id: dataset.id || dataset.datasetName || dataset.name,
-    datasetName: dataset.datasetName || dataset.id || dataset.name,
-    datasetYamlPath: dataset.datasetYamlPath || null,
-    name: dataset.name || dataset.datasetName || "Коллекция",
-    date: dataset.date || new Date().toISOString(),
-    images,
-    imageCount: typeof dataset.imageCount === "number" ? dataset.imageCount : images.length,
-    directoryHandle: null,
-    persisted: true,
-    trainSplitPercent,
-    valSplitPercent: Number.isFinite(dataset.valSplitPercent)
-      ? dataset.valSplitPercent
-      : 100 - trainSplitPercent,
-  };
+  return imageFiles.map((file) => {
+    const stemKey = file.relativePath.replace(/\\/g, "/").replace(/\.[^.]+$/u, "").toLowerCase();
+    const baseNameKey = stemKey.split("/").pop(); // Извлекаем чистый stem (без папок)
+    
+    const annotationTextFromBackend = loadedAnnotations[stemKey] || loadedAnnotations[baseNameKey] || null;
+
+    return {
+      file: file,
+      absolutePath: file.absolute_path || file.absolutePath,
+      url: getImageUrl(file.absolute_path || file.absolutePath),
+      name: file.name,
+      uuid: stemKey,
+      type: file.type,
+      size: file.size,
+      relativePath: file.relativePath,
+      split: null,
+      annotationFile: txtByStem.get(stemKey) || null,
+      annotationText: annotationTextFromBackend,
+    };
+  });
 }
 
 function useCollections() {
   const [collections, setCollections] = useState([]);
   const [isLoadingCollections, setIsLoadingCollections] = useState(true);
 
-  const loadStoredCollections = useCallback(async () => {
-    setIsLoadingCollections(true);
-    try {
-      const response = await getStoredDatasets();
-      const restored = Array.isArray(response.datasets)
-        ? response.datasets.map(buildStoredCollection)
-        : [];
-      setCollections((prev) => {
-        const localOnly = prev.filter((collection) => !collection.persisted);
-        return [...localOnly, ...restored];
-      });
-    } catch (error) {
-      console.error("Не удалось загрузить сохранённые коллекции:", error);
-    } finally {
+  useEffect(() => {
+    loadCollections().then(saved => {
+      setCollections(saved || []);
       setIsLoadingCollections(false);
-    }
+    }).catch(err => {
+      console.error("Ошибка загрузки из IndexedDB:", err);
+      setIsLoadingCollections(false);
+    });
   }, []);
 
   useEffect(() => {
-    loadStoredCollections();
-  }, [loadStoredCollections]);
+    if (!isLoadingCollections) saveCollections(collections);
+  }, [collections, isLoadingCollections]);
 
-  const addCollection = async (files, collectionName, directoryHandle) => {
-    console.log("=== addCollection called ===");
-    console.log("collectionName:", collectionName);
-    console.log("files count:", files.length);
-    
-    try {
-      const result = await createRawDataset(collectionName, Array.from(files));
-      console.log("createRawDataset result:", result);
-      
-      const response = await getStoredDatasets();
-      console.log("getStoredDatasets response:", response);
-      
-      const updatedDataset = response.datasets.find(d => d.datasetName === result.dataset_id);
-      
-      if (!updatedDataset) {
-        throw new Error("Dataset not found after creation");
-      }
-      
-      const newCollection = buildStoredCollection(updatedDataset);
-      newCollection.directoryHandle = directoryHandle;
-      newCollection.persisted = true;
-      
-      setCollections((prev) => [newCollection, ...prev]);
-      
-      console.log("Collection created successfully:", newCollection.id);
-      return newCollection.id;
-      
-    } catch (error) {
-      console.error("Failed to create dataset:", error);
-      
-      console.log("Falling back to local storage...");
-      const images = buildImagesWithAnnotations(files);
-      const newCollection = {
-        id: Date.now().toString(),
-        name: collectionName || `Коллекция от ${new Date().toLocaleString()}`,
-        date: new Date().toISOString(),
-        images,
-        imageCount: images.length,
-        directoryHandle,
-        persisted: false,
-        trainSplitPercent: DEFAULT_TRAIN_SPLIT_PERCENT,
-        valSplitPercent: 100 - DEFAULT_TRAIN_SPLIT_PERCENT,
+  const addCollection = (projectName, workspacePath, customId = null) => {
+    const newCollection = {
+      id: customId || crypto.randomUUID(), // ИСПОЛЬЗУЕМ UUID
+      name: projectName,
+      workspacePath: workspacePath,
+      date: new Date().toISOString(),
+      images: [],
+      folders: [],
+      projectClasses: [], // Инициализируем классы
+      trainSplitPercent: DEFAULT_TRAIN_SPLIT_PERCENT,
+      valSplitPercent: DEFAULT_VAL_SPLIT_PERCENT,
+      testSplitPercent: DEFAULT_TEST_SPLIT_PERCENT,
+      imageCount: 0
+    };
+    setCollections(prev => [...prev, newCollection]);
+    return newCollection.id;
+  };
+
+  const toggleFolderState = (collectionId, targetPath, newIsEnabled) => {
+    setCollections((prev) => prev.map((col) => {
+      if (col.id !== collectionId) return col;
+      const setDescendants = (nodes, val) => nodes.map(n => ({ ...n, isEnabled: val, children: n.children ? setDescendants(n.children, val) : [] }));
+      const updateTree = (nodes) => {
+        return nodes.map(node => {
+          if (node.path === targetPath) return { ...node, isEnabled: newIsEnabled, children: node.children ? setDescendants(node.children, newIsEnabled) : [] };
+          if (targetPath.startsWith(node.path + '/')) {
+            const updatedChildren = updateTree(node.children || []);
+            const nextEnabled = newIsEnabled ? true : node.isEnabled;
+            return { ...node, isEnabled: nextEnabled, children: updatedChildren };
+          }
+          return node;
+        });
       };
-      setCollections((prev) => [newCollection, ...prev]);
-      return newCollection.id;
-    }
+      return { ...col, folders: updateTree(col.folders || []) };
+    }));
   };
 
   const removeCollection = async (collectionId) => {
     const collection = collections.find((c) => c.id === collectionId);
-    if (!collection) {
-      return false;
-    }
-
-    if (collection.persisted) {
-      await deleteStoredDataset(collection.datasetName || collection.id);
-    }
-
+    if (!collection) return false;
     setCollections((prev) => prev.filter((c) => c.id !== collectionId));
     return true;
   };
 
-  const getCollection = (collectionId) => {
-    return collections.find((c) => c.id === collectionId);
-  };
+  const getCollection = (collectionId) => collections.find((c) => c.id === collectionId);
 
   const updateCollection = (collectionId, updatedData) => {
-    setCollections((prev) =>
-      prev.map((c) => (c.id === collectionId ? { ...c, ...updatedData } : c)),
-    );
+    setCollections((prev) => prev.map((c) => (c.id === collectionId ? { ...c, ...updatedData } : c)));
   };
 
-  const syncCollection = async (collectionId) => {
+  const syncCollection = async (collectionId, forceFolders = null) => {
     const collection = collections.find((c) => c.id === collectionId);
-    if (!collection || !collection.directoryHandle) {
-      throw new Error("No directory handle for this collection");
+    if (!collection) return;
+    const targetFolders = forceFolders || collection.folders;
+    if (!targetFolders || targetFolders.length === 0) return;
+
+    let allUpdatedFiles = [];
+    const updatedFolders = [];
+
+    for (const folderNode of targetFolders) {
+      if (!folderNode.absolutePath) {
+        updatedFolders.push(folderNode);
+        continue; 
+      }
+      const scanResult = await scanFolderOnBackend(folderNode.absolutePath, folderNode.path);
+      const mergedChildren = mergeTrees(folderNode.children || [], scanResult.tree || []);
+      allUpdatedFiles.push(...scanResult.files);
+      updatedFolders.push({ ...folderNode, children: mergedChildren });
     }
 
-    const allFiles = await getAllFilesFromDirectory(collection.directoryHandle);
-    const images = buildImagesWithAnnotations(allFiles);
-
-    setCollections((prev) =>
-      prev.map((c) =>
-        c.id === collectionId ? { ...c, images, imageCount: images.length } : c,
-      ),
-    );
-
-    return images;
+    const images = buildImagesWithAnnotations(allUpdatedFiles, collection.loadedAnnotations || {});
+    setCollections((prev) => prev.map((c) => c.id === collectionId ? { ...c, images, imageCount: images.length, folders: updatedFolders } : c));
   };
 
-  return {
-    collections,
-    isLoadingCollections,
-    loadStoredCollections,
-    addCollection,
-    removeCollection,
-    getCollection,
-    updateCollection,
-    syncCollection,
+  const debounceSync = useCallback((collection) => {
+    if (!collection.workspacePath) return;
+    // ПОЛНЫЙ PAYLOAD ДЛЯ YAML
+    const payload = {
+      id: collection.id, 
+      name: collection.name, 
+      created_at: collection.date, // Сохраняем дату
+      path: collection.workspacePath, 
+      folders: serializeFolders(collection.folders || []),
+      classes: collection.projectClasses || [], // Сохраняем классы
+      train_split_percent: collection.trainSplitPercent || 80, // Сохраняем сплит
+      val_split_percent: collection.valSplitPercent || 10,  // Изменено
+      test_split_percent: collection.testSplitPercent || 10 // Добавлено
+    };
+    updateProjectOnBackend(payload).catch(err => console.error("Ошибка фоновой синхронизации YAML:", err));
+  }, []);
+
+  useEffect(() => {
+    if (isLoadingCollections || collections.length === 0) return;
+    const timeoutId = setTimeout(() => { collections.forEach(col => debounceSync(col)); }, 1000);
+    return () => clearTimeout(timeoutId);
+  }, [collections, isLoadingCollections, debounceSync]);
+
+  const loadProject = async (backendData) => {
+    const { config, annotated_images } = backendData;
+    let allUpdatedFiles = [];
+    const updatedFolders = [];
+
+    if (config.folders && config.folders.length > 0) {
+      for (const folderNode of config.folders) {
+        if (!folderNode.absolutePath) {
+          updatedFolders.push(folderNode);
+          continue;
+        }
+        try {
+          const scanResult = await scanFolderOnBackend(folderNode.absolutePath, folderNode.path);
+          const mergedChildren = mergeTrees(folderNode.children || [], scanResult.tree || []);
+          allUpdatedFiles.push(...scanResult.files);
+          updatedFolders.push({ ...folderNode, children: mergedChildren });
+        } catch (error) {
+          updatedFolders.push(folderNode);
+        }
+      }
+    }
+
+    const images = buildImagesWithAnnotations(allUpdatedFiles, annotated_images || {});
+    
+    const newCollection = {
+      id: config.id, 
+      name: config.name, 
+      workspacePath: config.path, 
+      date: config.created_at || new Date().toISOString(),
+      folders: updatedFolders, 
+      projectClasses: config.classes || [], 
+      trainSplitPercent: config.train_split_percent || 80,
+      valSplitPercent: config.val_split_percent || 10,   // Изменено
+      testSplitPercent: config.test_split_percent || 10, // Добавлено
+      images: images, 
+      imageCount: images.length,
+      loadedAnnotations: annotated_images || {}
+    };
+    
+    setCollections(prev => {
+      const filtered = prev.filter(c => c.id !== newCollection.id);
+      return [...filtered, newCollection];
+    });
+    
+    return newCollection.id;
   };
+
+  return { collections, isLoadingCollections, addCollection, removeCollection, updateCollection, getCollection, syncCollection, toggleFolderState, loadProject };
 }
 
 export default useCollections;

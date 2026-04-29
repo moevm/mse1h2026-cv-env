@@ -7,9 +7,9 @@ import {
   getTrainingStatus,
   stopTraining,
   getAugmentations,
-  getTrainingLogs,
-  getDataset
+  getTrainingLogs
 } from "../../services/api";
+import { getDisabledFolderPaths } from "../../utils/fileSystem";
 import "../../styles/TrainingView.css";
 
 function TrainingView({ collection, currentVersionId }) {
@@ -17,13 +17,13 @@ function TrainingView({ collection, currentVersionId }) {
   const [activeTrainings, setActiveTrainings] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
-  const [datasetYamlPath, setDatasetYamlPath] = useState(null);
   const completedTasksRef = useRef(new Set());
   const websocketsRef = useRef({});
   
   const [params, setParams] = useState({
     model: "yolov8n",
     modelName: "",
+    use_coco8: false,
     epochs: 100,
     batch: 16,
     imgsz: 640,
@@ -165,7 +165,7 @@ function TrainingView({ collection, currentVersionId }) {
 
   const loadConfigs = async () => {
     try {
-      const trainingConfig = await getTrainingConfig();
+      const trainingConfig = await getTrainingConfig(collection.workspacePath);
       setParams(prev => ({ 
         ...prev, 
         ...trainingConfig,
@@ -177,33 +177,13 @@ function TrainingView({ collection, currentVersionId }) {
     }
 
     try {
-      const augConfig = await getAugmentations();
+      const augConfig = await getAugmentations(collection.workspacePath);
       setAugmentationParams(augConfig);
       addLog("Конфигурация аугментации загружена", "success");
     } catch (error) {
       addLog(`Ошибка загрузки конфигурации аугментации: ${error.message}`, "error");
     }
   };
-
-  useEffect(() => {
-    const loadDatasetYamlPath = async () => {
-      if (!collection?.name) {
-        setDatasetYamlPath(null);
-        return;
-      }
-
-      try {
-        const result = await getDataset(collection.name);
-        setDatasetYamlPath(result.yaml_path);
-        addLog(`Путь к датасету ${result.dataset_name} загружен`, "success");
-      } catch (error) {
-        addLog(`Ошибка загрузки пути к датасету: ${error.message}`, "error");
-        setDatasetYamlPath(null);
-      }
-    };
-
-    loadDatasetYamlPath();
-  }, [collection?.name, addLog]);
 
   const clearLogs = () => {
     setConsoleLogs([]);
@@ -266,7 +246,7 @@ function TrainingView({ collection, currentVersionId }) {
   const handleSaveConfig = async () => {
     try {
       setIsLoading(true);
-      await saveTrainingConfig(params);
+      await saveTrainingConfig(params, collection.workspacePath);
       addLog("Конфигурация обучения сохранена", "success");
       alert("Конфигурация сохранена");
     } catch (error) {
@@ -283,6 +263,16 @@ function TrainingView({ collection, currentVersionId }) {
 
     const { modelName, ...paramsWithoutModelName } = params;
 
+    const activeFolderNames = collection.folders
+      ? collection.folders.filter(f => f.isEnabled).map(f => f.name)
+      : [];
+
+    if (activeFolderNames.length === 0 && !params.use_coco8) {
+      addLog("Нет активных папок для обучения. Отметьте папки галочками.", "warning");
+      alert("Выберите хотя бы одну папку для обучения в меню слева.");
+      return;
+    }
+
     const trainingData = {
       ...paramsWithoutModelName,
       augmentations: augmentationParams || {},
@@ -291,7 +281,10 @@ function TrainingView({ collection, currentVersionId }) {
         name: collection.name,
         versionId: currentVersionId || "",
         versionName: currentVersion?.name || `Version ${currentVersionId || "unknown"}`,
-        yaml_path: datasetYamlPath || "coco8.yaml"
+        workspace_path: collection.workspacePath,
+        active_folders: activeFolderNames,
+        classes: [],
+        use_coco8: params.use_coco8
       },
       modelName: params.modelName && typeof params.modelName === 'string' 
         ? params.modelName
@@ -302,7 +295,7 @@ function TrainingView({ collection, currentVersionId }) {
     try {
       setIsLoading(true);
 
-      await saveTrainingConfig(trainingData);
+      await saveTrainingConfig(trainingData, collection.workspacePath);
 
       const response = await startTraining(trainingData);
       const taskId = response.task_id;
@@ -374,6 +367,15 @@ function TrainingView({ collection, currentVersionId }) {
               <span className="validation-text">Проверка модели...</span>
             </div>
           )}
+
+          <div className="param-group checkbox-group" style={{ marginTop: '10px', background: 'rgba(52, 152, 219, 0.1)', padding: '8px', borderRadius: '4px' }}>
+            <label style={{ color: '#3498db', fontWeight: 'bold' }}>COCO8:</label>
+            <input
+              type="checkbox"
+              checked={params.use_coco8}
+              onChange={(e) => handleChange("use_coco8", e.target.checked)}
+            />
+          </div>
           
           <div className="param-group">
             <label>epochs:</label>
