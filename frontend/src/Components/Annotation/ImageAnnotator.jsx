@@ -1,21 +1,14 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import Canvas from "./Canvas";
 import AnnotationToolbar from "./AnnotationToolbar";
 import AnnotationPopup from "./AnnotationPopup";
 import { isPointInRect, isPointInPolygon } from "../../utils/canvasUtils";
-import { addAnnotationClass, saveAnnotation } from "../../services/api";
+import { annotationToYoloLine } from "../../utils/yolo";
+import { autosaveAnnotation } from "../../services/api";
 import "../../styles/AnnotationView.css";
 
-function ImageAnnotator({ imageUrl, imageId, imageName, datasetName, externalAnnotations = [], onClose, annotationsManager }) {
-  const {
-    annotations,
-    classes,
-    addAnnotation,
-    addClass,
-    updateAnnotation,
-    deleteAnnotation,
-    getClassColor,
-  } = annotationsManager;
+function ImageAnnotator({ imageUrl, imageId, imageName, imageAbsPath, workspacePath, onClose, annotationsManager, onSaveAnnotation }) {
+  const { annotations, classes, addAnnotation, addClass, updateAnnotation, deleteAnnotation, getClassColor } = annotationsManager;
 
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentTool, setCurrentTool] = useState(null);
@@ -31,392 +24,211 @@ function ImageAnnotator({ imageUrl, imageId, imageName, datasetName, externalAnn
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
 
-  const currentImageAnnotations = annotations.filter((a) => a.imageId === imageId);
-  const displayedAnnotations = [...externalAnnotations, ...currentImageAnnotations];
+  const currentImageAnnotations = useMemo(() => annotations.filter((a) => a.imageId === imageId), [annotations, imageId]);
 
-  const findAnnotationAtPoint = useCallback(
-    (point) => {
+  // 1. Создаем хранилище для самых свежих данных (чтобы не пересоздавать таймер)
+  const latestProps = useRef({ classes, imageAbsPath, workspacePath, imageUrl, imageId, onSaveAnnotation });
+  useEffect(() => {
+    latestProps.current = { classes, imageAbsPath, workspacePath, imageUrl, imageId, onSaveAnnotation };
+  });
+
+  const isInitialMount = useRef(true);
+  const prevAnnotationsRef = useRef(null);
+
+  // 2. Таймер теперь реагирует ТОЛЬКО на изменение самих боксов
+  useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      prevAnnotationsRef.current = currentImageAnnotations;
+      return;
+    }
+
+    const prev = prevAnnotationsRef.current;
+    const curr = currentImageAnnotations;
+    let isSame = false;
+
+    if (prev && prev.length === curr.length) {
+      isSame = prev.every((ann, i) => {
+        return ann.id === curr[i].id && ann.x === curr[i].x && ann.y === curr[i].y &&
+               ann.width === curr[i].width && ann.height === curr[i].height &&
+               ann.classId === curr[i].classId && JSON.stringify(ann.points) === JSON.stringify(curr[i].points);
+      });
+    }
+
+    if (isSame) return; // Если боксы не менялись - ничего не делаем, таймер не сбрасывается!
+    prevAnnotationsRef.current = currentImageAnnotations;
+
+    const timer = setTimeout(async () => {
+      try {
+        // Достаем самые актуальные данные прямо перед сохранением
+        const { classes: latestClasses, imageAbsPath: latestPath, workspacePath: latestWs, imageUrl: latestUrl, imageId: latestId, onSaveAnnotation: latestOnSave } = latestProps.current;
+        
+        if (!latestPath || !latestWs) return;
+
+        const img = new Image();
+        img.src = latestUrl;
+        await new Promise((resolve) => {
+          if (img.complete) resolve();
+          else { img.onload = resolve; img.onerror = resolve; }
+        });
+
+        const imgW = img.naturalWidth || 1;
+        const imgH = img.naturalHeight || 1;
+
+        const yoloLines = curr.map((ann) => {
+          const classIndex = latestClasses.findIndex((c) => c.id === ann.classId);
+          if (classIndex === -1) return null;
+          return annotationToYoloLine(ann, classIndex, imgW, imgH);
+        }).filter(Boolean).join("\n");
+
+        const allClassNames = latestClasses.map((c) => c.name);
+        await autosaveAnnotation(latestPath, yoloLines, allClassNames, latestWs);
+
+        if (latestOnSave) {
+           latestOnSave(latestId, yoloLines);
+        }
+      } catch (error) {
+        console.error("Ошибка автосохранения разметки:", error);
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [currentImageAnnotations]); // УБРАЛИ ВСЕ ЛИШНИЕ ЗАВИСИМОСТИ!
+
+  const findAnnotationAtPoint = useCallback((point) => {
       for (let i = currentImageAnnotations.length - 1; i >= 0; i--) {
         const ann = currentImageAnnotations[i];
-        if (ann.type === "rectangle" && isPointInRect(point, ann)) {
-          return ann;
-        } else if (ann.type === "polygon" && isPointInPolygon(point, ann.points)) {
-          return ann;
-        }
+        if (ann.type === "rectangle" && isPointInRect(point, ann)) return ann;
+        else if (ann.type === "polygon" && isPointInPolygon(point, ann.points)) return ann;
       }
       return null;
-    },
-    [currentImageAnnotations],
-  );
+    }, [currentImageAnnotations]);
 
-  const handleMouseDown = useCallback(
-    (e, coords) => {
+  const handleMouseDown = useCallback((e, coords) => {
       if (currentTool === "rectangle") {
         setIsDrawing(true);
         setStartPoint(coords);
         setCurrentRect({ x: coords.x, y: coords.y, width: 0, height: 0 });
       } else if (selectedForEdit) {
         let isInside = false;
-        if (selectedForEdit.type === "rectangle") {
-          isInside = isPointInRect(coords, selectedForEdit);
-        } else if (selectedForEdit.type === "polygon") {
-          isInside = isPointInPolygon(coords, selectedForEdit.points);
-        }
+        if (selectedForEdit.type === "rectangle") isInside = isPointInRect(coords, selectedForEdit);
+        else if (selectedForEdit.type === "polygon") isInside = isPointInPolygon(coords, selectedForEdit.points);
         if (isInside) {
           setIsDragging(true);
-          if (selectedForEdit.type === "rectangle") {
-            setDragOffset({
-              x: coords.x - selectedForEdit.x,
-              y: coords.y - selectedForEdit.y,
-            });
-          } else if (selectedForEdit.type === "polygon") {
-            setDragOffset({
-              x: coords.x - selectedForEdit.points[0].x,
-              y: coords.y - selectedForEdit.points[0].y,
-            });
-          }
+          if (selectedForEdit.type === "rectangle") setDragOffset({ x: coords.x - selectedForEdit.x, y: coords.y - selectedForEdit.y });
+          else if (selectedForEdit.type === "polygon") setDragOffset({ x: coords.x - selectedForEdit.points[0].x, y: coords.y - selectedForEdit.points[0].y });
         }
       }
-    },
-    [currentTool, selectedForEdit],
-  );
+    }, [currentTool, selectedForEdit]);
 
-  const handleMouseMove = useCallback(
-    (e, coords) => {
+  const handleMouseMove = useCallback((e, coords) => {
       setMousePosition(coords);
-
       if (isDragging && selectedForEdit) {
         const newX = coords.x - dragOffset.x;
         const newY = coords.y - dragOffset.y;
-
         if (selectedForEdit.type === "rectangle") {
           updateAnnotation(selectedForEdit.id, { x: newX, y: newY });
         } else if (selectedForEdit.type === "polygon") {
           const dx = newX - selectedForEdit.points[0].x;
           const dy = newY - selectedForEdit.points[0].y;
-          const newPoints = selectedForEdit.points.map((p) => ({
-            x: p.x + dx,
-            y: p.y + dy,
-          }));
+          const newPoints = selectedForEdit.points.map((p) => ({ x: p.x + dx, y: p.y + dy }));
           updateAnnotation(selectedForEdit.id, { points: newPoints });
-          setDragOffset({
-            x: coords.x - newPoints[0].x,
-            y: coords.y - newPoints[0].y,
-          });
+          setDragOffset({ x: coords.x - newPoints[0].x, y: coords.y - newPoints[0].y });
         }
       } else if (isDrawing && currentTool === "rectangle") {
         const width = coords.x - startPoint.x;
         const height = coords.y - startPoint.y;
-        setCurrentRect({
-          x: width > 0 ? startPoint.x : coords.x,
-          y: height > 0 ? startPoint.y : coords.y,
-          width: Math.abs(width),
-          height: Math.abs(height),
-        });
+        setCurrentRect({ x: width > 0 ? startPoint.x : coords.x, y: height > 0 ? startPoint.y : coords.y, width: Math.abs(width), height: Math.abs(height) });
       }
-    },
-    [
-      isDragging,
-      selectedForEdit,
-      dragOffset,
-      isDrawing,
-      currentTool,
-      startPoint,
-      updateAnnotation,
-    ],
-  );
+    }, [isDragging, selectedForEdit, dragOffset, isDrawing, currentTool, startPoint, updateAnnotation]);
 
-  const handleMouseUp = useCallback(
-    (e, coords) => {
+  const handleMouseUp = useCallback((e, coords) => {
       if (isDrawing && currentTool === "rectangle" && currentRect) {
         if (currentRect.width >= 10 && currentRect.height >= 10) {
           setPopupPosition({ x: e.clientX, y: e.clientY });
-          setSelectedAnnotation({
-            type: "rectangle",
-            ...currentRect,
-            imageId,
-          });
+          setSelectedAnnotation({ type: "rectangle", ...currentRect, imageId });
           setShowPopup(true);
         }
         setIsDrawing(false);
         setCurrentRect(null);
       }
       setIsDragging(false);
-    },
-    [isDrawing, currentTool, currentRect, imageId],
-  );
+    }, [isDrawing, currentTool, currentRect, imageId]);
 
-  const handleClick = useCallback(
-    (e, coords) => {
+  const handleClick = useCallback((e, coords) => {
       if (currentTool) {
         if (currentTool === "polygon") {
           const newPolygon = [...currentPolygon, coords];
           setCurrentPolygon(newPolygon);
-
           if (newPolygon.length >= 3) {
             const firstPoint = newPolygon[0];
             const distance = Math.hypot(coords.x - firstPoint.x, coords.y - firstPoint.y);
             if (distance < 15) {
               setPopupPosition({ x: e.clientX, y: e.clientY });
-              setSelectedAnnotation({
-                type: "polygon",
-                points: newPolygon,
-                imageId,
-              });
+              setSelectedAnnotation({ type: "polygon", points: newPolygon, imageId });
               setShowPopup(true);
               setCurrentPolygon([]);
             }
           }
         }
       } else {
-        const annotation = findAnnotationAtPoint(coords);
-        setSelectedForEdit(annotation || null);
+        setSelectedForEdit(findAnnotationAtPoint(coords) || null);
       }
-    },
-    [currentTool, currentPolygon, findAnnotationAtPoint, imageId],
-  );
+    }, [currentTool, currentPolygon, findAnnotationAtPoint, imageId]);
 
-  const handleDoubleClick = useCallback(
-    async (e, coords) => {
+  const handleDoubleClick = useCallback((e, coords) => {
       if (selectedForEdit && window.confirm("Удалить выделенную область?")) {
-        const deletedAnnotationId = selectedForEdit.id;
-        const deletedImageId = selectedForEdit.imageId;
-        
-        // Удаляем из локального состояния
-        deleteAnnotation(deletedAnnotationId);
-        
-        // Сохраняем обновлённую разметку на бэкенд
-        if (datasetName && deletedImageId) {
-          try {
-            const remainingAnnotations = annotations.filter(
-              (a) => a.imageId === deletedImageId && a.id !== deletedAnnotationId
-            );
-            
-            // Конвертируем в YOLO формат
-            const yoloLines = remainingAnnotations
-              .map((ann) => {
-                const classIndex = classes.findIndex((c) => c.id === ann.classId);
-                if (classIndex === -1) return null;
-                
-                if (ann.type === "rectangle") {
-                  const x = (ann.x + ann.width / 2) / 100;
-                  const y = (ann.y + ann.height / 2) / 100;
-                  const w = ann.width / 100;
-                  const h = ann.height / 100;
-                  return `${classIndex} ${x.toFixed(6)} ${y.toFixed(6)} ${w.toFixed(6)} ${h.toFixed(6)}`;
-                } else if (ann.type === "polygon") {
-                  // Вычисляем bounding box для полигона
-                  if (!ann.points || ann.points.length === 0) return null;
-                  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-                  for (const p of ann.points) {
-                    minX = Math.min(minX, p.x);
-                    minY = Math.min(minY, p.y);
-                    maxX = Math.max(maxX, p.x);
-                    maxY = Math.max(maxY, p.y);
-                  }
-                  const xCenter = ((minX + maxX) / 2) / 100;
-                  const yCenter = ((minY + maxY) / 2) / 100;
-                  const width = (maxX - minX) / 100;
-                  const height = (maxY - minY) / 100;
-                  return `${classIndex} ${xCenter.toFixed(6)} ${yCenter.toFixed(6)} ${width.toFixed(6)} ${height.toFixed(6)}`;
-                }
-                return null;
-              })
-              .filter(Boolean)
-              .join("\n");
-            
-            const allClassNames = classes.map((c) => c.name);
-            await saveAnnotation(datasetName, deletedImageId, yoloLines, allClassNames);
-            console.log("Аннотация удалена на бэкенде");
-          } catch (error) {
-            console.error("Ошибка при удалении разметки на бэкенде:", error);
-          }
-        }
-        
+        deleteAnnotation(selectedForEdit.id);
         setSelectedForEdit(null);
       }
-    },
-    [selectedForEdit, deleteAnnotation, annotations, datasetName, classes, saveAnnotation]
-  );
+    }, [selectedForEdit, deleteAnnotation]);
 
-  const handleContextMenu = useCallback(
-    (e, coords) => {
+  const handleContextMenu = useCallback((e, coords) => {
       e.preventDefault();
-      if (currentTool === "polygon" && currentPolygon.length > 0) {
-        setCurrentPolygon((prev) => prev.slice(0, -1));
-      } else if (selectedForEdit) {
-        setSelectedForEdit(null);
-      }
-    },
-    [currentTool, currentPolygon, selectedForEdit],
-  );
+      if (currentTool === "polygon" && currentPolygon.length > 0) setCurrentPolygon((prev) => prev.slice(0, -1));
+      else if (selectedForEdit) setSelectedForEdit(null);
+    }, [currentTool, currentPolygon, selectedForEdit]);
 
   const handleMouseLeave = useCallback(() => {
-    if (isDrawing && currentTool === "rectangle") {
-      setIsDrawing(false);
-      setCurrentRect(null);
-    }
+    if (isDrawing && currentTool === "rectangle") { setIsDrawing(false); setCurrentRect(null); }
     setMousePosition(null);
   }, [isDrawing, currentTool]);
 
   useEffect(() => {
-    setCurrentRect(null);
-    setCurrentPolygon([]);
-    setIsDrawing(false);
-    setSelectedForEdit(null);
+    setCurrentRect(null); setCurrentPolygon([]); setIsDrawing(false); setSelectedForEdit(null);
   }, [currentTool]);
 
-  const handleSaveAnnotation = useCallback(
-    async (classId, newClassName = null) => {
+  const handleSaveAnnotation = useCallback(async (classId, newClassName = null) => {
       try {
         let finalClassId = classId;
-        
-        // Если создается новый класс
-        if (newClassName && datasetName) {
-          try {
-            const response = await addAnnotationClass(datasetName, newClassName);
-            finalClassId = addClass(newClassName);
-          } catch (error) {
-            console.error("Ошибка при добавлении класса:", error);
-            finalClassId = addClass(newClassName);
-          }
-        } else if (newClassName) {
-          finalClassId = addClass(newClassName);
-        }
-        
-        // Сохраняем аннотацию локально
-        if (selectedAnnotation && finalClassId) {
-          const annotation = {
-            ...selectedAnnotation,
-            classId: finalClassId,
-          };
-          addAnnotation(annotation);
-          
-          if (datasetName && imageId) {
-            try {
-              // Собираем все аннотации для этого изображения (включая существующие и новую)
-              const allCurrentAnnotations = [
-                ...currentImageAnnotations,
-                annotation,
-              ];
-              
-              const yoloLines = allCurrentAnnotations
-                .map((ann) => {
-                  const classIndex = classes.findIndex((c) => c.id === ann.classId);
-                  if (classIndex === -1) return null;
-                  
-                  if (ann.type === "rectangle") {
-                    // Нормализованные координаты для прямоугольника (0-1)
-                    const x = ann.x / 100;
-                    const y = ann.y / 100;
-                    const w = ann.width / 100;
-                    const h = ann.height / 100;
-                    return `${classIndex} ${x.toFixed(6)} ${y.toFixed(6)} ${w.toFixed(6)} ${h.toFixed(6)}`;
-                    
-                  } else if (ann.type === "polygon") {
-                    // Для полигона: нужен bounding box по точкам
-                    if (!ann.points || ann.points.length === 0) return null;
-                    
-                    // Находим мин/макс координаты полигона
-                    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-                    for (const p of ann.points) {
-                      // Координаты уже нормализованы (0-100) из Canvas
-                      minX = Math.min(minX, p.x);
-                      minY = Math.min(minY, p.y);
-                      maxX = Math.max(maxX, p.x);
-                      maxY = Math.max(maxY, p.y);
-                    }
-                    
-                    const xCenter = ((minX + maxX) / 2) / 100;
-                    const yCenter = ((minY + maxY) / 2) / 100;
-                    const width = (maxX - minX) / 100;
-                    const height = (maxY - minY) / 100;
-                    
-                    return `${classIndex} ${xCenter.toFixed(6)} ${yCenter.toFixed(6)} ${width.toFixed(6)} ${height.toFixed(6)}`;
-                  }
-                  return null;
-                })
-                .filter(Boolean)
-                .join("\n");
-              
-              const allClassNames = classes.map((c) => c.name);
-              
-              await saveAnnotation(datasetName, imageId, yoloLines, allClassNames);
-              console.log("Аннотация сохранена на бэкенд");
-            } catch (error) {
-              console.error("Ошибка при сохранении разметки на бэкенде:", error);
-            }
-          }
-        }
-        
-        setShowPopup(false);
-        setSelectedAnnotation(null);
+        if (newClassName) finalClassId = addClass(newClassName);
+        if (selectedAnnotation && finalClassId) addAnnotation({ ...selectedAnnotation, classId: finalClassId });
+        setShowPopup(false); setSelectedAnnotation(null);
       } catch (error) {
         console.error("Ошибка при сохранении аннотации:", error);
-        setShowPopup(false);
-        setSelectedAnnotation(null);
       }
-    },
-    [selectedAnnotation, addClass, addAnnotation, currentImageAnnotations, classes, datasetName, imageId],
-  );
-  const handleCancelAnnotation = useCallback(() => {
-    setShowPopup(false);
-    setSelectedAnnotation(null);
-  }, []);
+    }, [selectedAnnotation, addClass, addAnnotation]);
 
-  const handleZoomIn = useCallback(() => {
-    setZoom((prev) => Math.min(prev + 0.1, 3));
-  }, []);
-
-  const handleZoomOut = useCallback(() => {
-    setZoom((prev) => Math.max(prev - 0.1, 0.5));
-  }, []);
+  const handleCancelAnnotation = useCallback(() => { setShowPopup(false); setSelectedAnnotation(null); }, []);
+  const handleZoomIn = useCallback(() => setZoom((prev) => Math.min(prev + 0.1, 3)), []);
+  const handleZoomOut = useCallback(() => setZoom((prev) => Math.max(prev - 0.1, 0.5)), []);
 
   return (
     <div className="image-annotator">
-      <div className="annotator-header">
-        <h3>{imageName}</h3>
-        <button className="close-button" onClick={onClose}>
-          ×
-        </button>
-      </div>
+      <div className="annotator-header"><h3>{imageName}</h3><button className="close-button" onClick={onClose}>×</button></div>
       <div className="annotator-main">
         <div className="canvas-container">
           <Canvas
-            imageUrl={imageUrl}
-            annotations={displayedAnnotations}
-            classes={classes}
-            getClassColor={getClassColor}
-            selectedForEdit={selectedForEdit}
-            currentRect={currentRect}
-            currentPolygon={currentPolygon}
-            currentTool={currentTool}
-            mousePosition={mousePosition}
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-            onClick={handleClick}
-            onDoubleClick={handleDoubleClick}
-            onContextMenu={handleContextMenu}
-            onMouseLeave={handleMouseLeave}
-            zoom={zoom}
+            imageUrl={imageUrl} annotations={currentImageAnnotations} classes={classes} getClassColor={getClassColor}
+            selectedForEdit={selectedForEdit} currentRect={currentRect} currentPolygon={currentPolygon}
+            currentTool={currentTool} mousePosition={mousePosition} onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onClick={handleClick}
+            onDoubleClick={handleDoubleClick} onContextMenu={handleContextMenu} onMouseLeave={handleMouseLeave} zoom={zoom}
           />
         </div>
-        <AnnotationToolbar
-          currentTool={currentTool}
-          onToolSelect={setCurrentTool}
-          onZooomIncr={handleZoomIn}
-          onZoomDecr={handleZoomOut}
-        />
+        <AnnotationToolbar currentTool={currentTool} onToolSelect={setCurrentTool} onZooomIncr={handleZoomIn} onZoomDecr={handleZoomOut} />
       </div>
-      {showPopup && (
-        <AnnotationPopup
-          position={popupPosition}
-          classes={classes}
-          onSave={handleSaveAnnotation}
-          onCancel={handleCancelAnnotation}
-        />
-      )}
+      {showPopup && <AnnotationPopup position={popupPosition} classes={classes} onSave={handleSaveAnnotation} onCancel={handleCancelAnnotation} />}
     </div>
   );
 }

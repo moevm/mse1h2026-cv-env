@@ -14,7 +14,7 @@ function ProjectManagerModal({ onClose, onProjectCreated, onProjectLoaded }) {
 
       const folderName = absolutePath.split(/[\\/]/).pop();
       const finalProjectName = newProjectName.trim() || folderName;
-      const projectId = Date.now().toString();
+      const projectId = crypto.randomUUID();
 
       const payload = {
         id: projectId,

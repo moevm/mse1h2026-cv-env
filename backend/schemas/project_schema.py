@@ -9,7 +9,8 @@ class ProjectInitRequest(BaseModel):
     folders: Optional[List[Dict[str, Any]]] = Field(default=[])
     classes: Optional[List[Dict[str, Any]]] = Field(default=[])
     train_split_percent: Optional[int] = 80
-    val_split_percent: Optional[int] = 20
+    val_split_percent: Optional[int] = 10
+    test_split_percent: Optional[int] = 10
 
 class ProjectUpdateRequest(BaseModel):
     id: str
@@ -19,4 +20,5 @@ class ProjectUpdateRequest(BaseModel):
     folders: List[Dict[str, Any]] = []
     classes: Optional[List[Dict[str, Any]]] = []
     train_split_percent: Optional[int] = 80
-    val_split_percent: Optional[int] = 20
+    val_split_percent: Optional[int] = 10
+    test_split_percent: Optional[int] = 10

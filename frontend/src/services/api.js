@@ -15,7 +15,20 @@ export const getImageUrl = (absolutePath) => {
   return `${API_BASE_URL}/api/utils/image?path=${encodeURIComponent(absolutePath)}`;
 };
 
-// Project
+export const readTextFileSafe = async (absolutePath) => {
+  if (!absolutePath) return "";
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/utils/read-text?path=${encodeURIComponent(absolutePath)}`);
+    if (res.ok) {
+      const data = await res.json();
+      return data.content;
+    }
+  } catch (e) {
+    console.error("Ошибка при тихом чтении файла:", e);
+  }
+  return "";
+};
+
 export const pickWorkspacePath = async () => {
   const res = await fetch(`${API_BASE_URL}/api/utils/pick-directory`);
   if (!res.ok) throw new Error("Не удалось выбрать папку");
@@ -25,25 +38,18 @@ export const pickWorkspacePath = async () => {
 
 export const initProjectOnBackend = async (payload) => {
   const res = await fetch(`${API_BASE_URL}/api/projects/init`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
   });
-  
   if (!res.ok) {
     const errorData = await res.json(); 
-    console.error("Детали ошибки 422:", errorData);
     throw new Error(JSON.stringify(errorData.detail) || "Ошибка инициализации проекта");
   }
-  
   return await res.json();
 };
 
 export const updateProjectOnBackend = async (payload) => {
   const res = await fetch(`${API_BASE_URL}/api/projects/update`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
   });
   if (!res.ok) throw new Error("Ошибка обновления YAML");
   return await res.json();
@@ -51,12 +57,10 @@ export const updateProjectOnBackend = async (payload) => {
 
 export const loadProjectFromBackend = async (workspacePath) => {
   const res = await fetch(`${API_BASE_URL}/api/projects/load${buildQuery(workspacePath, "path")}`);
-  
   if (!res.ok) {
     const error = await res.json().catch(() => ({}));
     throw new Error(error.detail || "Не удалось загрузить проект");
   }
-  
   return await res.json();
 };
 
@@ -69,9 +73,7 @@ export const getAugmentations = async (workspacePath) => {
 
 export const saveAugmentations = async (data, workspacePath) => {
   const res = await fetch(`${API_BASE_URL}/api/augmentation/config${buildQuery(workspacePath)}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data),
   });
   if (!res.ok) throw new Error("Ошибка сохранения конфигурации");
   return await res.json();
@@ -86,9 +88,7 @@ export const getTrainingConfig = async (workspacePath) => {
 
 export const saveTrainingConfig = async (data, workspacePath) => {
   const res = await fetch(`${API_BASE_URL}/api/training/config${buildQuery(workspacePath)}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data),
   });
   if (!res.ok) throw new Error("Ошибка сохранения конфигурации обучения");
   return await res.json();
@@ -96,9 +96,7 @@ export const saveTrainingConfig = async (data, workspacePath) => {
 
 export const startTraining = async (data) => {
   const res = await fetch(`${API_BASE_URL}/api/training/start`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data),
   });
   if (!res.ok) {
     const error = await res.json();
@@ -109,9 +107,7 @@ export const startTraining = async (data) => {
 
 export const validateModel = async (modelName) => {
   const res = await fetch(`${API_BASE_URL}/api/training/validate-model`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model_name: modelName }),
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model_name: modelName }),
   });
   if (!res.ok) {
     const error = await res.json();
@@ -148,12 +144,15 @@ export const getStoredDatasets = async (workspacePath) => {
   return await res.json();
 };
 
-export const exportDataset = async ({ collectionName, workspacePath, subFolderName, classes, items, trainPercent }) => {
+export const exportDataset = async ({ collectionName, workspacePath, subFolderName, classes, items, trainPercent, valPercent, testPercent, splitMode }) => {
   const payload = {
     collection_name: collectionName,
     workspace_path: workspacePath || "",
     sub_folder_name: subFolderName || "default",
     trainPercent,
+    valPercent,
+    testPercent,
+    split_mode: splitMode || "split",
     classes,
     items: items.map((item) => ({
       absolutePath: item.absolutePath,
@@ -163,11 +162,7 @@ export const exportDataset = async ({ collectionName, workspacePath, subFolderNa
   };
 
   const res = await fetch(`${API_BASE_URL}/api/datasets/export`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
   });
 
   if (!res.ok) {
@@ -178,130 +173,69 @@ export const exportDataset = async ({ collectionName, workspacePath, subFolderNa
 };
 
 export const deleteStoredDataset = async (workspacePath) => {
-  const res = await fetch(`${API_BASE_URL}/api/datasets/clear${buildQuery(workspacePath)}`, {
-    method: "DELETE",
-  });
+  const res = await fetch(`${API_BASE_URL}/api/datasets/clear${buildQuery(workspacePath)}`, { method: "DELETE" });
   if (!res.ok) throw new Error("Ошибка удаления данных");
   return await res.json();
 };
 
-export async function createRawDataset(datasetName, files) {
-  const formData = new FormData();
-  formData.append("dataset_name", datasetName);
-  
-  for (const file of files) {
-    formData.append("files", file);
-  }
-  
-  const response = await fetch("http://localhost:8000/api/datasets/upload-raw", {
-    method: "POST",
-    body: formData,
-  });
-  
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.detail || "Failed to upload dataset");
-  }
-  
-  return response.json();
-}
-
-// Annotations
-export const addAnnotationClass = async (datasetName, className) => {
-  const res = await fetch(`${API_BASE_URL}/api/datasets/${encodeURIComponent(datasetName)}/annotations/class`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ class_name: className }),
-  });
-
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({}));
-    throw new Error(error.detail || "Ошибка добавления класса");
-  }
-
-  return await res.json();
-};
-
-export const saveAnnotation = async (datasetName, imageUuid, annotationContent, classes = []) => {
-  const res = await fetch(`${API_BASE_URL}/api/datasets/${encodeURIComponent(datasetName)}/annotations/save`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+// Annotations (Прямое автосохранение)
+export const autosaveAnnotation = async (imageAbsPath, annotationContent, classes = [], workspacePath) => {
+  const res = await fetch(`${API_BASE_URL}/api/datasets/autosave`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      image_uuid: imageUuid,
+      image_abs_path: imageAbsPath,
       content: annotationContent,
       classes: classes,
+      workspace_path: workspacePath,
     }),
   });
-
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({}));
-    throw new Error(error.detail || "Ошибка сохранения разметки");
-  }
-
   return await res.json();
 };
 
-// Сохранение разметки на бэкенд
-export async function saveAnnotationToBackend(datasetName, imageUuid, annotationContent, classesList) {
-  try {
-    const response = await fetch(`http://localhost:8000/api/datasets/${datasetName}/annotations`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        image_uuid: imageUuid,
-        content: annotationContent,
-        classes: classesList,
-      }),
-    });
-    
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || 'Failed to save annotation');
-    }
-    
-    return await response.json();
-  } catch (error) {
-    console.error('Error saving annotation to backend:', error);
-    return null;
-  }
+export async function loadWorkspaceClasses(workspacePath) {
+  const response = await fetch(`${API_BASE_URL}/api/datasets/workspace-classes?workspace_path=${encodeURIComponent(workspacePath)}`);
+  return await response.json();
 }
 
-// Загрузка разметки с бэкенда
-export async function loadAnnotationFromBackend(datasetName, imageUuid) {
-  try {
-    const response = await fetch(`http://localhost:8000/api/datasets/${datasetName}/annotations/${imageUuid}`);
-    
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || 'Failed to load annotation');
-    }
-    
-    return await response.json();
-  } catch (error) {
-    console.error('Error loading annotation from backend:', error);
-    return { content: '', exists: false };
-  }
-}
+// ----- Experiments API -----
+export const getExperiments = async (workspacePath, sortBy = 'map50', order = 'desc') => {
+  const wpQuery = workspacePath ? `workspace_path=${encodeURIComponent(workspacePath)}&` : "";
+  const res = await fetch(`${API_BASE_URL}/api/experiments?${wpQuery}sort_by=${sortBy}&order=${order}`);
+  if (!res.ok) throw new Error("Ошибка загрузки списка экспериментов");
+  return await res.json();
+};
 
-// Загрузка классов с бэкенда
-export async function loadClassesFromBackend(datasetName) {
-  try {
-    const response = await fetch(`http://localhost:8000/api/datasets/${datasetName}/classes`);
-    
-    if (!response.ok) {
-      throw new Error('Failed to load classes');
-    }
-    
-    return await response.json();
-  } catch (error) {
-    console.error('Error loading classes from backend:', error);
-    return { classes: [] };
-  }
-}
+export const runExperiment = async (data, workspacePath) => {
+  const payload = { ...data, workspace_path: workspacePath };
+  const res = await fetch(`${API_BASE_URL}/api/experiments/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error("Ошибка запуска эксперимента");
+  return await res.json();
+};
 
+export const compareExperiments = async (expIds, workspacePath) => {
+  const res = await fetch(`${API_BASE_URL}/api/experiments/compare${buildQuery(workspacePath)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(expIds),
+  });
+  if (!res.ok) throw new Error("Ошибка сравнения");
+  return await res.json();
+};
+
+export const getAvailableModels = async (workspacePath) => {
+  const res = await fetch(`${API_BASE_URL}/api/experiments/models${buildQuery(workspacePath)}`);
+  if (!res.ok) throw new Error("Ошибка загрузки списка моделей");
+  return await res.json();
+};
+
+export const deleteExperiment = async (expId, workspacePath) => {
+  const res = await fetch(`${API_BASE_URL}/api/experiments/${expId}${buildQuery(workspacePath)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error("Ошибка удаления эксперимента");
+  return await res.json();
+};

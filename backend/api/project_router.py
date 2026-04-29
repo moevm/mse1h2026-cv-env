@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 import asyncio
 import os
+import uuid
 from fastapi.responses import FileResponse
 from schemas.project_schema import ProjectInitRequest, ProjectUpdateRequest
 from services.project_service import *
@@ -20,7 +21,11 @@ async def pick_directory():
 @router.post("/projects/init")
 async def init_project(request: ProjectInitRequest):
     try:
-        result = init_project_workspace(request.name, request.path, request.id) 
+        project_id = request.id
+        if not project_id or project_id.isdigit():
+            project_id = str(uuid.uuid4())
+
+        result = init_project_workspace(request.name, request.path, project_id) 
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -56,3 +61,13 @@ async def serve_image(path: str):
         raise HTTPException(status_code=404, detail="Файл не найден на диске")
     
     return FileResponse(path)
+
+@router.get("/utils/read-text")
+async def read_text_file(path: str):
+    if os.path.exists(path) and os.path.isfile(path):
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                return {"content": f.read()}
+        except Exception:
+            pass
+    return {"content": ""}
