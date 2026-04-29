@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Query
 import asyncio
 from typing import Dict
 from schemas.training_schema import TrainingParamsSchema, TrainingRequestSchema
@@ -16,17 +16,16 @@ router = APIRouter(prefix="/api/training", tags=["Training"])
 
 
 @router.get("/config")
-async def get_config():
+async def get_config(workspace_path: str = Query(None)):
     try:
-        return load_training_config()
+        return load_training_config(workspace_path)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @router.post("/config")
-async def update_config(data: TrainingParamsSchema):
+async def update_config(data: TrainingParamsSchema, workspace_path: str = Query(None)):
     try:
-        save_training_config(data)
+        save_training_config(data, workspace_path)
         return {"status": "success", "message": "Конфигурация сохранена"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

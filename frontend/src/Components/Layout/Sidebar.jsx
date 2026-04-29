@@ -1,4 +1,32 @@
+import React from "react";
 import "../../styles/Layout.css";
+
+const FolderTree = ({ nodes, onToggle }) => {
+  if (!nodes || nodes.length === 0) return null;
+
+  return (
+    <ul className="folder-tree-list">
+      {nodes.map((node) => (
+        <li key={node.path} className="folder-tree-item">
+          <div className="folder-tree-row">
+            <input
+              type="checkbox"
+              checked={node.isEnabled}
+              onChange={(e) => onToggle(node.path, e.target.checked)}
+            />
+            <span className="folder-icon">{node.isEnabled ? "📂" : "📁"}</span>
+            <span className={`folder-name ${!node.isEnabled ? "disabled" : ""}`}>
+              {node.name}
+            </span>
+          </div>
+          {node.children && node.children.length > 0 && (
+            <FolderTree nodes={node.children} onToggle={onToggle} />
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+};
 
 function Sidebar({
   collections,
@@ -6,7 +34,11 @@ function Sidebar({
   onCollectionClick,
   onAddCollection,
   onDeleteCollection,
+  onAddFolders,
+  onToggleFolder
 }) {
+  const activeCollection = collections.find(c => c.id === currentCollectionId);
+
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
@@ -22,31 +54,43 @@ function Sidebar({
       <div className="collections-list">
         {collections.length === 0 ? (
           <div className="no-collections">
-            <p>Нет коллекций</p>
-            <p className="hint">Нажмите "Новая коллекция" чтобы создать</p>
+            <p>Нет проектов</p>
+            <p className="hint">Нажмите "Новый проект" чтобы создать</p>
           </div>
         ) : (
           collections.map((collection) => (
-            <div
-              key={collection.id}
-              className={`collection-item ${collection.id === currentCollectionId ? `active` : ``}`}
-              onClick={() => onCollectionClick(collection.id)}
-            >
-              <span className="collection-icon">📁</span>
-              <span className="collection-name">{collection.name}</span>
-              <span className="collection-count">{collection.imageCount}</span>
-              <button
-                type="button"
-                className="collection-delete-btn"
-                title={`Удалить ${collection.name}`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onDeleteCollection(collection.id);
-                }}
+            <React.Fragment key={collection.id}>
+              <div
+                className={`collection-item ${collection.id === currentCollectionId ? "active" : ""}`}
+                onClick={() => onCollectionClick(collection.id)}
               >
-                🗑
-              </button>
-            </div>
+                <span className="collection-icon">📦</span>
+                <span className="collection-name" style={{ flexGrow: 1 }}>{collection.name}</span>
+                <span className="collection-count">{collection.imageCount}</span>
+                <button
+                  type="button"
+                  className="collection-delete-btn"
+                  title={`Удалить ${collection.name}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onDeleteCollection(collection.id);
+                  }}
+                >
+                  🗑
+                </button>
+              </div>
+
+              {collection.id === currentCollectionId && (
+                <div className="active-project-workspace">
+                  <button className="add-folders-btn" onClick={onAddFolders}>
+                    + Добавить папки в проект
+                  </button>
+                  <div className="tree-container">
+                    <FolderTree nodes={activeCollection?.folders} onToggle={onToggleFolder} />
+                  </div>
+                </div>
+              )}
+            </React.Fragment>
           ))
         )}
       </div>

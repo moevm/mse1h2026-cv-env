@@ -3,6 +3,7 @@ import ImageGallery from "./ImageGallery";
 import ImageViewer from "./ImageViewer";
 
 import useAnnotations from "../../hooks/useAnnotations";
+import { getDisabledFolderPaths } from "../../utils/fileSystem";
 import { exportDataset } from "../../services/api";
 import { annotationToYoloLine } from "../../utils/yolo";
 
@@ -101,7 +102,20 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
   }, [collection?.id, currentVersionId]);
 
   const currentVersion = versions.find((v) => v.id === currentVersionId);
-  const images = currentVersion?.images || collection?.images || [];
+
+  const ignoredPaths = useMemo(() => {
+    return collection?.folders ? getDisabledFolderPaths(collection.folders) : [];
+  }, [collection?.folders]);
+
+  const images = useMemo(() => {
+    const baseImages = currentVersion?.images || collection?.images || [];
+    if (ignoredPaths.length === 0) return baseImages;
+
+    return baseImages.filter(img => {
+      return !ignoredPaths.some(ignoredPath => img.relativePath.startsWith(ignoredPath + '/'));
+    });
+  }, [collection?.images, currentVersion?.images, ignoredPaths]);
+
   const galleryImages = images.map((image) => ({
     ...image,
     isMarked:
@@ -177,24 +191,68 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
         classNames[index] = `class_${index}`;
       }
 
-      const response = await exportDataset({
-        collectionName: collection.name,
-        classes: classNames,
-        items,
-        trainPercent: trainSplitPercent,
-      });
+      const activeFolders = collection.folders ? collection.folders.filter(f => f.isEnabled) : [];
+      if (activeFolders.length === 0) {
+        setSaveMessage("Нет активных папок для сохранения.");
+        setIsSaving(false);
+        return;
+      }
 
-      onCollectionUpdate?.(collection.id, {
-        persisted: true,
-        datasetName: response.dataset_name,
-        datasetYamlPath: response.dataset_yaml_path,
-        trainSplitPercent: response.train_percent,
-        valSplitPercent: response.val_percent,
-      });
+      let foldersSaved = 0;
+      let lastResponse = null;
 
-      setSaveMessage(
-        `Датасет сохранён: ${response.dataset_path}. Train: ${response.split_counts.train}, Val: ${response.split_counts.val}`,
-      );
+      // Отправляем каждую папку отдельным запросом
+      for (const folder of activeFolders) {
+        // Выбираем только те файлы, которые лежат в этой корневой папке
+        const folderItemsRaw = items.filter(item => 
+          item.relativePath.startsWith(folder.path + '/') || item.relativePath === folder.path
+        );
+
+        if (folderItemsRaw.length === 0) continue;
+
+        // ОЧИЩАЕМ ПУТИ: отрезаем виртуальное имя корневой папки
+        const folderItemsCleaned = folderItemsRaw.map(item => {
+          let cleanPath = item.relativePath;
+          
+          // Если путь начинается с "имя_корневой_папки/", отрезаем эту часть
+          if (cleanPath.startsWith(folder.path + '/')) {
+            cleanPath = cleanPath.substring(folder.path.length + 1);
+          } else if (cleanPath === folder.path) {
+            // Если это файл в самом корне без подпапок
+            cleanPath = cleanPath.split('/').pop();
+          }
+
+          return {
+            ...item,
+            relativePath: cleanPath // Перезаписываем путь на чистый
+          };
+        });
+
+        lastResponse = await exportDataset({
+          collectionName: collection.name,
+          workspacePath: collection.workspacePath,
+          subFolderName: folder.name, 
+          classes: classNames,
+          items: folderItemsCleaned,
+          trainPercent: trainSplitPercent,
+        });
+        
+        foldersSaved++;
+      }
+
+      if (foldersSaved > 0 && lastResponse) {
+        onCollectionUpdate?.(collection.id, {
+          persisted: true,
+          datasetName: lastResponse.dataset_name,
+          datasetYamlPath: lastResponse.dataset_yaml_path,
+          trainSplitPercent: lastResponse.train_percent,
+          valSplitPercent: lastResponse.val_percent,
+        });
+        setSaveMessage(`Успешно! Экспортировано папок: ${foldersSaved}`);
+      } else {
+        setSaveMessage("Не найдено изображений для экспорта в активных папках.");
+      }
+
     } catch (error) {
       console.error(error);
       setSaveMessage(`Ошибка сохранения: ${error.message}`);
