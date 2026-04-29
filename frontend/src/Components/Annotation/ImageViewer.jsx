@@ -6,6 +6,7 @@ import "../../styles/AnnotationView.css";
 
 function ImageViewer({
   image,
+  collection,
   onClose,
   onNext,
   onPrev,
@@ -15,6 +16,32 @@ function ImageViewer({
 }) {
   const [currentUrl, setCurrentUrl] = useState(null);
   const [txtAnnotations, setTxtAnnotations] = useState([]);
+
+  // Функция для преобразования индексов классов в ID
+  const convertIndexToClassId = (classIndex, classes) => {
+    // Если индекс существует в массиве классов
+    if (classIndex >= 0 && classIndex < classes.length) {
+      return classes[classIndex].id;
+    }
+    return null;
+  };
+
+  // Функция для преобразования всех аннотаций
+  const convertAnnotationsIndicesToIds = (annotations, classes) => {
+    const converted = [];
+    for (const ann of annotations) {
+      const classId = convertIndexToClassId(ann.classId, classes);
+      if (classId) {
+        converted.push({
+          ...ann,
+          classId: classId,
+        });
+      } else {
+        console.warn(`Класс с индексом ${ann.classId} не найден, аннотация пропущена`);
+      }
+    }
+    return converted;
+  };
 
   useEffect(() => {
     if (!image) return;
@@ -40,11 +67,9 @@ function ImageViewer({
           const previewImage = new Image();
           previewImage.onload = () => resolve({ width: previewImage.naturalWidth, height: previewImage.naturalHeight });
           previewImage.onerror = reject;
-          previewImage.src = newUrl;
+          previewImage.src = imageUrl;
         });
-
-        const [txtContent, imageSize] = await Promise.all([txtPromise, sizePromise]);
-
+        
         if (!isActive) return;
         setTxtAnnotations(parseTxtAnnotations(txtContent, imageSize.width, imageSize.height));
       } catch (error) {
@@ -58,7 +83,7 @@ function ImageViewer({
     return () => {
       isActive = false;
     };
-  }, [image]);
+  }, [image, collection, annotationsManager.classes]);
 
   if (!image) return null;
 
@@ -77,14 +102,22 @@ function ImageViewer({
             </button>
           )}
         </div>
-        <ImageAnnotator
-          imageUrl={currentUrl}
-          imageId={image.relativePath}
-          imageName={image.name}
-          externalAnnotations={txtAnnotations}
-          onClose={onClose}
-          annotationsManager={annotationsManager}
-        />
+        {isLoading ? (
+          <div className="viewer-loading">
+            <div className="spinner"></div>
+            <p>Загрузка разметки...</p>
+          </div>
+        ) : (
+          <ImageAnnotator
+            imageUrl={currentUrl}
+            imageId={image.uuid || image.relativePath || image.id}
+            imageName={image.name || image.originalName}
+            datasetName={collection?.name}
+            externalAnnotations={txtAnnotations}
+            onClose={onClose}
+            annotationsManager={annotationsManager}
+          />
+        )}
       </div>
     </div>
   );

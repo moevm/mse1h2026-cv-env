@@ -184,3 +184,124 @@ export const deleteStoredDataset = async (workspacePath) => {
   if (!res.ok) throw new Error("Ошибка удаления данных");
   return await res.json();
 };
+
+export async function createRawDataset(datasetName, files) {
+  const formData = new FormData();
+  formData.append("dataset_name", datasetName);
+  
+  for (const file of files) {
+    formData.append("files", file);
+  }
+  
+  const response = await fetch("http://localhost:8000/api/datasets/upload-raw", {
+    method: "POST",
+    body: formData,
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || "Failed to upload dataset");
+  }
+  
+  return response.json();
+}
+
+// Annotations
+export const addAnnotationClass = async (datasetName, className) => {
+  const res = await fetch(`${API_BASE_URL}/api/datasets/${encodeURIComponent(datasetName)}/annotations/class`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ class_name: className }),
+  });
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.detail || "Ошибка добавления класса");
+  }
+
+  return await res.json();
+};
+
+export const saveAnnotation = async (datasetName, imageUuid, annotationContent, classes = []) => {
+  const res = await fetch(`${API_BASE_URL}/api/datasets/${encodeURIComponent(datasetName)}/annotations/save`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      image_uuid: imageUuid,
+      content: annotationContent,
+      classes: classes,
+    }),
+  });
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.detail || "Ошибка сохранения разметки");
+  }
+
+  return await res.json();
+};
+
+// Сохранение разметки на бэкенд
+export async function saveAnnotationToBackend(datasetName, imageUuid, annotationContent, classesList) {
+  try {
+    const response = await fetch(`http://localhost:8000/api/datasets/${datasetName}/annotations`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        image_uuid: imageUuid,
+        content: annotationContent,
+        classes: classesList,
+      }),
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to save annotation');
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Error saving annotation to backend:', error);
+    return null;
+  }
+}
+
+// Загрузка разметки с бэкенда
+export async function loadAnnotationFromBackend(datasetName, imageUuid) {
+  try {
+    const response = await fetch(`http://localhost:8000/api/datasets/${datasetName}/annotations/${imageUuid}`);
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to load annotation');
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Error loading annotation from backend:', error);
+    return { content: '', exists: false };
+  }
+}
+
+// Загрузка классов с бэкенда
+export async function loadClassesFromBackend(datasetName) {
+  try {
+    const response = await fetch(`http://localhost:8000/api/datasets/${datasetName}/classes`);
+    
+    if (!response.ok) {
+      throw new Error('Failed to load classes');
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Error loading classes from backend:', error);
+    return { classes: [] };
+  }
+}
+

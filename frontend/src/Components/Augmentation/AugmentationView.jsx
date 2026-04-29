@@ -91,44 +91,38 @@ function AugmentationView({ collection, versions, currentVersionId }) {
   const handleNumberInputChange = (key, value) => {
     const config = paramConfig[key];
     const numValue = Number(value);
-    // Валидация по минимум и максимум
     const validValue = Math.max(config.min, Math.min(config.max, numValue));
     handleChange(key, validValue);
   };
 
-const getAugmentationStyle = (params) => {
-  const persp = params.perspective > 0 ? Math.max(220, 1200 - params.perspective * 1000000) : 1200;
-  const rotX = params.perspective * -40000; 
-  const rotY = params.perspective * 24000; 
-  const shearAngle = params.shear;
+  const getAugmentationStyle = (params) => {
+    const persp = params.perspective > 0 ? Math.max(220, 1200 - params.perspective * 1000000) : 1200;
+    const rotX = params.perspective * -40000; 
+    const rotY = params.perspective * 24000; 
+    const shearAngle = params.shear;
+    const zoom = Math.max(0.2, Math.min(2, params.scale));
+    const translate = params.translate * 30;
 
-  const zoom = Math.max(0.2, Math.min(2, params.scale));
-  const translate = params.translate * 30;
-  // Если нужно вернуть флип:
-  // const scaleX = params.fliplr > 0.5 ? -1 : 1;
-  // const scaleY = params.flipud > 0.5 ? -1 : 1;
-  // + scale(${zoom*scaleX}, ${zoom*scaleY}) в transform
-
-
-  return {
-    filter: `hue-rotate(${params.hsv_h*360}deg) saturate(${params.hsv_s*100}%) brightness(${params.hsv_v*100}%)`,
-    transform: `
-      rotate(${params.degrees}deg)
-      scale(${zoom})
-      translate(${translate}px, ${translate}px)
-      skew(${shearAngle}deg)
-      perspective(${persp}px)
-      rotateX(${rotX}deg)
-      rotateY(${rotY}deg)
-    `,
-    transformOrigin: 'center',
-    transformStyle: 'preserve-3d',
-    transition: 'transform .15s ease-out, filter .15s ease-out',
-    maxWidth: '100%',
-    height: 'auto',
-    display: 'block',
+    return {
+      filter: `hue-rotate(${params.hsv_h*360}deg) saturate(${params.hsv_s*100}%) brightness(${params.hsv_v*100}%)`,
+      transform: `
+        rotate(${params.degrees}deg)
+        scale(${zoom})
+        translate(${translate}px, ${translate}px)
+        skew(${shearAngle}deg)
+        perspective(${persp}px)
+        rotateX(${rotX}deg)
+        rotateY(${rotY}deg)
+      `,
+      transformOrigin: 'center',
+      transformStyle: 'preserve-3d',
+      transition: 'transform .15s ease-out, filter .15s ease-out',
+      maxWidth: '100%',
+      height: 'auto',
+      display: 'block',
+    };
   };
-};
+
   const handleApply = async () => {
     try {
       await saveAugmentations(params, collection.workspacePath);
@@ -163,16 +157,16 @@ const getAugmentationStyle = (params) => {
       <div className="image-frame">
         <div className="image-container">
           <h3>Original Image</h3>
-          {originalUrl ? (
-            <img src={originalUrl} alt={originalImage?.name} />
+          {originalImageUrl ? (
+            <img src={originalImageUrl} alt={originalImage?.originalName || originalImage?.name} />
           ) : (
             <div className="placeholder">Загрузка...</div>
           )}
         </div>
         <div className="image-container">
           <h3>Augmented Image</h3>
-          {augmentedUrl ? (
-            <img src={augmentedUrl} alt="Augmented" style={getAugmentationStyle(params)} />
+          {augmentedImageUrl ? (
+            <img src={augmentedImageUrl} alt="Augmented" style={getAugmentationStyle(params)} />
           ) : (
             <div className="placeholder">Загрузка...</div>
           )}
@@ -182,7 +176,7 @@ const getAugmentationStyle = (params) => {
       <div className="controls">
         <div className="left-controls">
           <div className="control-item">
-            <label>Hue (hsv_h) </label>
+            <label>Hue (hsv_h)</label>
             <input type="range" min="0" max="1" step="0.001"
               value={params.hsv_h}
               onChange={(e) => handleChange("hsv_h", e.target.value)}

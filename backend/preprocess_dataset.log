@@ -1,0 +1,14 @@
+2026-04-25 23:23:24,190 - INFO - Starting dataset preprocessing
+2026-04-25 23:23:24,190 - INFO - Images: datasets\coco8\images\train | Labels: datasets\coco8\labels\train
+2026-04-25 23:23:24,191 - INFO - Output: datasets\processed_coco8
+2026-04-25 23:23:24,191 - INFO - Split ratios - train: 0.8, val: 0.1, test: 0.1
+2026-04-25 23:23:24,192 - INFO - Found 4 valid image+annotation pairs
+2026-04-25 23:23:24,193 - INFO - Assigned 4 UUIDs and sorted by UUID
+2026-04-25 23:23:24,193 - INFO - Shuffled dataset with seed=42
+2026-04-25 23:23:24,193 - INFO - Dataset split - train: 3, val: 0, test: 1
+2026-04-25 23:23:24,222 - INFO - Created output directory structure at datasets\processed_coco8
+2026-04-25 23:23:24,228 - INFO - Copied 8 files (4 pairs)
+2026-04-25 23:23:24,229 - INFO - Metadata saved to datasets\processed_coco8\metadata.json
+2026-04-25 23:23:24,229 - INFO - No errors encountered during processing
+2026-04-25 23:23:24,229 - INFO - Processing completed successfully!
+2026-04-25 23:23:24,229 - INFO - Summary: {'status': 'success', 'total_pairs': 4, 'train_count': 3, 'val_count': 0, 'test_count': 1, 'errors': 0, 'output_dir': 'datasets\\processed_coco8'}

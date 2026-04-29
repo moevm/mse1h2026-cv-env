@@ -1,4 +1,5 @@
 import json
+import uuid
 import mimetypes
 import os
 import re
@@ -81,6 +82,48 @@ def _resolve_dataset_subpath(datasets_dir: str, dataset_name: str, base_dir_name
 
 def _collect_image_entries(dataset_name: str, dataset_dir: str, workspace_path: str = "") -> list[dict[str, Any]]:
     dataset_root = Path(dataset_dir)
+    
+    uuid_mapping = _load_uuid_mapping(dataset_root)
+    
+    if uuid_mapping:
+        entries = []
+        images_dir = dataset_root / "images"
+        labels_dir = dataset_root / "labels"
+        
+        if not images_dir.exists():
+            return entries
+        
+        for image_file in images_dir.iterdir():
+            if not image_file.is_file() or image_file.suffix.lower() not in IMAGE_EXTENSIONS:
+                continue
+            
+            uid = image_file.stem 
+            
+            original_name = uuid_mapping.get(uid, {}).get("original_name", uid)
+            split = uuid_mapping.get(uid, {}).get("split")  # может быть None
+            
+            # Путь к файлу разметки
+            label_file = labels_dir / f"{uid}.txt"
+            annotation_text = _read_text_file(str(label_file)) if label_file.exists() else ""
+            
+            # Формируем путь для URL
+            stored_path = f"images/{image_file.name}"
+            
+            entries.append({
+                "name": uid, 
+                "originalName": original_name,
+                "relativePath": uid,
+                "storedPath": stored_path,
+                "split": split,
+                "url": f"/api/datasets/{quote(dataset_name)}/files/{_quote_path_parts(stored_path)}",
+                "annotationText": annotation_text,
+                "uuid": uid,
+            })
+        
+        # Сортируем по UUID для консистентности
+        entries.sort(key=lambda x: x["name"])
+        return entries
+    
     collected: list[dict[str, Any]] = []
 
     for split_name in ("train", "val"):

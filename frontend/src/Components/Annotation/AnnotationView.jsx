@@ -11,6 +11,7 @@ import "../../styles/AnnotationView.css";
 
 const DEFAULT_TRAIN_SPLIT_PERCENT = 80;
 
+
 function getImageSize(image) {
   return new Promise((resolve, reject) => {
     const previewImage = new Image();
@@ -59,7 +60,7 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
 
-  const annotationsManager = useAnnotations(collection?.id);
+  const annotationsManager = useAnnotations(collection?.id, collection?.name);
 
   useEffect(() => {
     setCurrentImage(null);
@@ -105,7 +106,7 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
     isMarked:
       Boolean(image.annotationFile) ||
       Boolean(image.annotationText) ||
-      annotationsManager.getAnnotationsByImage(image.relativePath).length > 0,
+      annotationsManager.getAnnotationsByImage(image.uuid).length > 0,
   }));
 
   const trainSplitPercent = collection?.trainSplitPercent ?? DEFAULT_TRAIN_SPLIT_PERCENT;
@@ -138,7 +139,7 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
         const existingTxt = image.annotationFile
           ? await image.annotationFile.text()
           : image.annotationText || "";
-        const drawnAnnotations = annotationsManager.getAnnotationsByImage(image.relativePath);
+        const drawnAnnotations = annotationsManager.getAnnotationsByImage(image.uuid);
 
         const drawnLines = drawnAnnotations
           .map((annotation) => {
@@ -172,9 +173,7 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
       const maxClassId = allUsedClassIds.size > 0 ? Math.max(...allUsedClassIds) : -1;
       const classNames = [...annotationsManager.classes.map((item) => item.name)];
 
-      for (let index = classNames.length; index <= maxClassId; index += 1) {
-        classNames[index] = `class_${index}`;
-      }
+
 
       const activeFolders = collection.folders ? collection.folders.filter(f => f.isEnabled) : [];
       if (activeFolders.length === 0) {
@@ -263,7 +262,7 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
   function handleNextImage() {
     if (currentImage && images.length > 0) {
       const currentIndex = images.findIndex(
-        (img) => img.relativePath === currentImage.relativePath,
+        (img) => img.relativePath === currentImage.uuid,
       );
       if (currentIndex < images.length - 1) {
         setCurrentImage(images[currentIndex + 1]);
@@ -274,7 +273,7 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
   function handlePrevImage() {
     if (currentImage && images.length > 0) {
       const currentIndex = images.findIndex(
-        (img) => img.relativePath === currentImage.relativePath,
+        (img) => img.relativePath === currentImage.uuid,
       );
       if (currentIndex > 0) {
         setCurrentImage(images[currentIndex - 1]);
@@ -291,7 +290,7 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
   }
 
   const currentIndex = currentImage
-    ? images.findIndex((img) => img.relativePath === currentImage.relativePath)
+    ? images.findIndex((img) => img.relativePath === currentImage.uuid)
     : -1;
 
   return (
@@ -354,6 +353,7 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
       {showViewer && currentImage && (
         <ImageViewer
           image={currentImage}
+          collection={collection} 
           onClose={handleCloseViewer}
           onNext={handleNextImage}
           onPrev={handlePrevImage}
