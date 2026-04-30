@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 
 const NewExperimentModal = ({ 
   onClose, 
@@ -16,6 +16,29 @@ const NewExperimentModal = ({
   });
   const [localLoading, setLocalLoading] = useState(false);
   const isLoading = parentLoading || localLoading;
+
+
+  const formatModelLabel = (model) => {
+    const path = model.value;
+    const originalLabel = model.label;
+    if (!path) return originalLabel;
+    
+
+    const parts = path.split(/[\\\/]/);
+    if (parts.length < 2) return originalLabel;
+    
+    const fileName = parts[parts.length - 1];
+    const parentFolder = parts[parts.length - 2];
+
+    return `${parentFolder}/${fileName}`;
+  };
+
+  const enhancedModels = useMemo(() => {
+    return availableModels.map(model => ({
+      ...model,
+      displayLabel: formatModelLabel(model)
+    }));
+  }, [availableModels]);
 
   useEffect(() => {
     if (availableModels.length > 0 && !form.model_path) {
@@ -74,8 +97,8 @@ const NewExperimentModal = ({
               onChange={(e) => setForm({ ...form, model_path: e.target.value })}
             >
               <option value="" disabled>Выберите из списка...</option>
-              {availableModels.map((m) => (
-                <option key={m.value} value={m.value}>{m.label}</option>
+              {enhancedModels.map((m) => (
+                <option key={m.value} value={m.value}>{m.displayLabel}</option>
               ))}
             </select>
           </label>
