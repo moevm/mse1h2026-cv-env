@@ -504,73 +504,68 @@ def get_training_metrics(task_id: str) -> dict:
     """Возвращает историю метрик из results.csv эксперимента"""
     exp_dir = training_exp_dirs.get(task_id)
     if not exp_dir:
-        # Возможно, обучение ещё не создало папку или оно завершено
-        # Попробуем найти папку по стандартному пути
-        from core.paths import get_project_paths
-        # Но без контекста не знаем workspace_path – вернём пустой результат
         return {"history": [], "latest": None, "best": None}
     
     csv_path = os.path.join(exp_dir, "results.csv")
     if not os.path.exists(csv_path):
         return {"history": [], "latest": None, "best": None}
     
-    # Читаем CSV вручную (без pandas)
     import csv
     rows = []
     with open(csv_path, 'r', encoding='utf-8') as f:
         reader = csv.DictReader(f)
+        fieldnames = reader.fieldnames  # сохраняем все имена колонок
         for row in reader:
             rows.append(row)
     
-    # Преобразуем в список словарей с нужными ключами
     history = []
     best_map50 = 0.0
     best_epoch = 0
+    
     for row in rows:
         epoch = int(row.get('epoch', 0))
-        # Ищем нужные столбцы по возможным именам
-        map50 = row.get('metrics/mAP50(B)')
-        if map50 is None:
-            map50 = row.get('mAP50')
-        precision = row.get('metrics/precision(B)')
-        recall = row.get('metrics/recall(B)')
-        loss = row.get('val/box_loss')
-        if loss is None:
-            loss = row.get('train/box_loss')
         
-        # Преобразуем в числа, если возможно
-        try:
-            map50 = float(map50) if map50 else None
-        except:
-            map50 = None
-        try:
-            precision = float(precision) if precision else None
-        except:
-            precision = None
-        try:
-            recall = float(recall) if recall else None
-        except:
-            recall = None
-        try:
-            loss = float(loss) if loss else None
-        except:
-            loss = None
-        
-        history.append({
+        # Все метрики
+        metrics = {
             "epoch": epoch,
-            "mAP50": map50,
-            "precision": precision,
-            "recall": recall,
-            "loss": loss,
-        })
-        if map50 and map50 > best_map50:
-            best_map50 = map50
+            "train/box_loss": _safe_float(row.get('train/box_loss')),
+            "train/cls_loss": _safe_float(row.get('train/cls_loss')),
+            "train/dfl_loss": _safe_float(row.get('train/dfl_loss')),
+            "val/box_loss": _safe_float(row.get('val/box_loss')),
+            "val/cls_loss": _safe_float(row.get('val/cls_loss')),
+            "val/dfl_loss": _safe_float(row.get('val/dfl_loss')),
+            "precision": _safe_float(row.get('metrics/precision(B)')),
+            "recall": _safe_float(row.get('metrics/recall(B)')),
+            "mAP50": _safe_float(row.get('metrics/mAP50(B)')),
+            "mAP50-95": _safe_float(row.get('metrics/mAP50-95(B)')),
+            "lr": _safe_float(row.get('lr/pg0')),
+        }
+        
+        history.append(metrics)
+        
+        if metrics["mAP50"] and metrics["mAP50"] > best_map50:
+            best_map50 = metrics["mAP50"]
             best_epoch = epoch
     
     latest = history[-1] if history else None
     
+    # Вычисляем F1 из Precision и Recall
+    f1 = None
+    if latest and latest["precision"] and latest["recall"] and (latest["precision"] + latest["recall"]) > 0:
+        f1 = 2 * (latest["precision"] * latest["recall"]) / (latest["precision"] + latest["recall"])
+    
     return {
         "history": history,
-        "latest": latest,
-        "best": {"mAP50": best_map50, "epoch": best_epoch} if best_epoch else None
+        "latest": {**latest, "f1": f1} if latest else None,
+        "best": {"mAP50": best_map50, "epoch": best_epoch} if best_epoch else None,
+        "fieldnames": fieldnames
     }
+
+def _safe_float(value):
+    """Безопасное преобразование в float"""
+    if value is None or value == '':
+        return None
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return None
