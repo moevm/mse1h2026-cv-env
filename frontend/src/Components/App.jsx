@@ -149,7 +149,7 @@ function App() {
       case "annotation": return <AnnotationView key={currentCollectionId} collection={currentCollection} versions={versions} currentVersionId={currentVersionId} onCollectionUpdate={updateCollection} />;
       case "augmentation": return <AugmentationView key={currentCollectionId} collection={currentCollection} versions={versions} currentVersionId={currentVersionId} />;
       case "training": return <TrainingView key={currentCollectionId} collection={currentCollection} currentVersionId={currentVersionId} />;
-      case "experiments": return <ExperimentsView />;
+      case "experiments": return <ExperimentsView key={currentCollectionId} collection={currentCollection} />;
       default: return null;
     }
   }
