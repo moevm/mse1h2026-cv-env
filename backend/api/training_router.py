@@ -9,7 +9,8 @@ from services.training_service import (
     get_training_logs,
     stop_training,
     validate_model_name,
-    get_training_metrics
+    get_training_metrics,
+    resume_training
 )
 
 
@@ -235,5 +236,16 @@ async def training_metrics(task_id: str):
         if metrics is None:
             raise HTTPException(status_code=404, detail="Task not found or no metrics yet")
         return metrics
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
+@router.post("/resume/{task_id}")
+async def resume_training_endpoint(task_id: str):
+    try:
+        result = resume_training(task_id)
+        if not result:
+            raise HTTPException(status_code=400, detail="Не удалось возобновить обучение")
+        return {"status": "success", "task_id": task_id, "message": "Обучение возобновлено"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

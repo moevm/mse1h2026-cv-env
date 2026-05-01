@@ -18,6 +18,7 @@ training_logs: Dict[str, List[str]] = {}
 training_events: Dict[str, threading.Event] = {}
 training_threads: Dict[str, threading.Thread] = {}
 training_exp_dirs: Dict[str, str] = {} 
+training_requests: Dict[str, TrainingRequestSchema] = {}
 
 class TrainingCallback:
     """Колбэк для отслеживания прогресса обучения"""
@@ -185,7 +186,7 @@ def run_dummy_training(task_id: str, request: TrainingRequestSchema):
         training_tasks[task_id].updated_at = datetime.now()
 
 
-def run_real_training(task_id: str, request: TrainingRequestSchema):
+def run_real_training(task_id: str, request: TrainingRequestSchema, resume_from: str = None):
     """Реальное обучение YOLO"""
     stop_event = training_events.get(task_id)
     
@@ -290,6 +291,7 @@ def run_real_training(task_id: str, request: TrainingRequestSchema):
             'warmup_epochs': request.warmup_epochs,
             'warmup_momentum': request.warmup_momentum,
             'warmup_bias_lr': request.warmup_bias_lr,
+            'resume': resume_from if resume_from else False,
             'project': training_dir,
             'name': task_id,
             'exist_ok': True,
@@ -435,6 +437,7 @@ def start_training_async(request: TrainingRequestSchema) -> str:
         updated_at=datetime.now()
     )
     
+    training_requests[task_id] = request
     training_logs[task_id] = []
     add_training_log(task_id, f"Задача создана, ID: {task_id}")
     
@@ -569,3 +572,42 @@ def _safe_float(value):
         return float(value)
     except (ValueError, TypeError):
         return None
+    
+def resume_training(task_id: str) -> bool:
+    if task_id not in training_tasks:
+        return False
+    if training_tasks[task_id].status not in ["stopped", "failed"]:
+        return False
+    exp_dir = training_exp_dirs.get(task_id)
+    if not exp_dir:
+        return False
+    last_pt = os.path.join(exp_dir, "last.pt")
+    if not os.path.exists(last_pt):
+        return False
+    request = training_requests.get(task_id)
+    if not request:
+        return False
+    
+    # Удаляем старый stop_event, если есть (он уже сработал)
+    if task_id in training_events:
+        del training_events[task_id]
+    
+    stop_event = threading.Event()
+    training_events[task_id] = stop_event
+    
+    # Обновляем статус
+    training_tasks[task_id].status = "pending"
+    training_tasks[task_id].progress = 0
+    training_tasks[task_id].current_epoch = 0
+    training_tasks[task_id].error = None
+    training_tasks[task_id].updated_at = datetime.now()
+    
+    # Запускаем новый поток с resume_from = last_pt
+    thread = threading.Thread(
+        target=run_real_training,
+        args=(task_id, request, last_pt),
+        daemon=True
+    )
+    thread.start()
+    training_threads[task_id] = thread
+    return True
