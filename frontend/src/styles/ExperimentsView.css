@@ -162,7 +162,22 @@
 }
 
 /* Модалка нового эксперимента */
-.modal-content {
+/* EXPERIMENT MODAL - unique class names to avoid conflicts */
+.exp-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.exp-modal-content {
   background: white;
   border-radius: 16px;
   padding: 24px;
@@ -171,10 +186,10 @@
   max-height: 85vh;
   overflow-y: auto;
   box-shadow: 0 20px 35px -10px rgba(0, 0, 0, 0.3);
-  animation: modalSlideIn 0.2s ease-out;
+  animation: expModalSlideIn 0.2s ease-out;
 }
 
-@keyframes modalSlideIn {
+@keyframes expModalSlideIn {
   from {
     opacity: 0;
     transform: translateY(-16px);
@@ -185,7 +200,7 @@
   }
 }
 
-.modal-content h3 {
+.exp-modal-content h3 {
   margin: 0 0 20px 0;
   font-size: 1.35rem;
   font-weight: 600;
@@ -194,13 +209,13 @@
   padding-left: 14px;
 }
 
-.modal-content form {
+.exp-modal-content form {
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
 
-.modal-content label {
+.exp-modal-content label {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -209,7 +224,8 @@
   font-size: 13px;
 }
 
-.modal-content input {
+.exp-modal-content input,
+.exp-modal-content select {
   padding: 10px 14px;
   border: 1px solid #d1d5db;
   border-radius: 10px;
@@ -218,26 +234,27 @@
   background: #fafafa;
 }
 
-.modal-content input:focus {
+.exp-modal-content input:focus,
+.exp-modal-content select:focus {
   outline: none;
   border-color: #4f46e5;
   background: white;
   box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
 }
 
-.required {
+.exp-modal-content .required {
   color: #ef4444;
   margin-left: 4px;
 }
 
-.modal-buttons {
+.exp-modal-actions {
   display: flex;
   gap: 12px;
   justify-content: flex-end;
   margin-top: 8px;
 }
 
-.modal-buttons button {
+.exp-primary-btn {
   padding: 10px 20px;
   border: none;
   border-radius: 10px;
@@ -245,30 +262,54 @@
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
-}
-
-.modal-buttons button[type="submit"] {
   background: linear-gradient(135deg, #4f46e5, #6366f1);
   color: white;
 }
 
-.modal-buttons button[type="submit"]:hover:not(:disabled) {
+.exp-primary-btn:hover:not(:disabled) {
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
 }
 
-.modal-buttons button[type="submit"]:disabled {
+.exp-primary-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
 
-.modal-buttons button[type="button"] {
+.exp-cancel-btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
   background: #f3f4f6;
   color: #4b5563;
 }
 
-.modal-buttons button[type="button"]:hover {
+.exp-cancel-btn:hover {
   background: #e5e7eb;
+}
+
+/* Scrollbar for experiment modal */
+.exp-modal-content::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.exp-modal-content::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+.exp-modal-content::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.exp-modal-content::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 
 /* Модалка сравнения */
