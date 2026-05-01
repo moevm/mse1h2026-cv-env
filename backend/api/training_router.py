@@ -8,7 +8,8 @@ from services.training_service import (
     get_training_status,
     get_training_logs,
     stop_training,
-    validate_model_name
+    validate_model_name,
+    get_training_metrics
 )
 
 
@@ -223,3 +224,16 @@ async def websocket_endpoint(websocket: WebSocket, task_id: str):
         finally:
             manager.disconnect(websocket, task_id)
             print(f"[WS] Connection cleaned up for task {task_id}")
+
+@router.get("/metrics/{task_id}")
+async def training_metrics(task_id: str):
+    """
+    Возвращает метрики обучения (история по эпохам, последние, лучшие).
+    """
+    try:
+        metrics = get_training_metrics(task_id)
+        if metrics is None:
+            raise HTTPException(status_code=404, detail="Task not found or no metrics yet")
+        return metrics
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

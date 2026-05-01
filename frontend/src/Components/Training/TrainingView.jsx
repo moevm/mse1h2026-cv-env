@@ -4,12 +4,11 @@ import {
   saveTrainingConfig, 
   startTraining, 
   validateModel,
-  getTrainingStatus,
   stopTraining,
   getAugmentations,
-  getTrainingLogs
+  getTrainingLogs,
+  getTrainingMetrics
 } from "../../services/api";
-import { getDisabledFolderPaths } from "../../utils/fileSystem";
 import "../../styles/TrainingView.css";
 
 function TrainingView({ collection, currentVersionId }) {
@@ -19,6 +18,10 @@ function TrainingView({ collection, currentVersionId }) {
   const [isValidating, setIsValidating] = useState(false);
   const completedTasksRef = useRef(new Set());
   const websocketsRef = useRef({});
+   const metricsPollsRef = useRef({}); // для хранения таймеров опроса метрик
+
+  // Словарь для хранения метрик по каждому активному обучению
+  const [metricsData, setMetricsData] = useState({});
   
   const [params, setParams] = useState({
     model: "yolov8n",
@@ -44,7 +47,7 @@ function TrainingView({ collection, currentVersionId }) {
   });
 
   const [augmentationParams, setAugmentationParams] = useState(null);
-  
+
   const currentVersion = collection?.versions?.find(v => v.id === currentVersionId);
 
   const addLog = useCallback((message, type = "info") => {
@@ -89,6 +92,7 @@ function TrainingView({ collection, currentVersionId }) {
         ));
         
         if (data.status === 'completed') {
+          stopMetricsPolling(taskId);
           addLog(`Обучение "${taskInfo.modelIdentifier}" успешно завершено`, "success");
           completedTasksRef.current.add(taskId);
           
@@ -103,6 +107,8 @@ function TrainingView({ collection, currentVersionId }) {
         }
         
         if (data.status === 'failed') {
+          stopMetricsPolling(taskId);
+
           addLog(`Обучение "${taskInfo.modelIdentifier}" не завершено: ${data.error || 'неизвестная ошибка'}`, "error");
           completedTasksRef.current.add(taskId);
           
@@ -117,6 +123,8 @@ function TrainingView({ collection, currentVersionId }) {
         }
         
         if (data.status === 'stopped') {
+          stopMetricsPolling(taskId);
+
           addLog(`Обучение "${taskInfo.modelIdentifier}" остановлено`, "warning");
           completedTasksRef.current.add(taskId);
           
@@ -148,6 +156,33 @@ function TrainingView({ collection, currentVersionId }) {
     websocketsRef.current[taskId] = ws;
   }, [addLog]);
   
+  const startMetricsPolling = useCallback((taskId, taskInfo) => {
+    if (metricsPollsRef.current[taskId]) clearInterval(metricsPollsRef.current[taskId]);
+    
+    const poll = setInterval(async () => {
+      try {
+        const data = await getTrainingMetrics(taskId);
+        setMetricsData(prev => ({
+          ...prev,
+          [taskId]: data
+        }));
+        // Обновляем также в activeTrainings (если нужно)
+        setActiveTrainings(prev => prev.map(t => 
+          t.taskId === taskId ? { ...t, metrics: data.latest } : t
+        ));
+      } catch (error) {
+        // Если обучение завершено и metrics уже нет – остановим опрос
+        if (error.message.includes("404")) {
+          if (metricsPollsRef.current[taskId]) clearInterval(metricsPollsRef.current[taskId]);
+          delete metricsPollsRef.current[taskId];
+        }
+      }
+    }, 2000);
+    metricsPollsRef.current[taskId] = poll;
+  }, []);
+
+
+
   useEffect(() => {
     return () => {
       Object.values(websocketsRef.current).forEach(ws => {
@@ -192,6 +227,8 @@ function TrainingView({ collection, currentVersionId }) {
   const handleStopTraining = async (taskId, modelIdentifier) => {
     try {
       await stopTraining(taskId);
+      stopMetricsPolling(taskId);
+
       addLog(`Обучение "${modelIdentifier}" остановлено пользователем`, "info");
       
       completedTasksRef.current.add(taskId);
@@ -207,6 +244,11 @@ function TrainingView({ collection, currentVersionId }) {
       addLog(`Ошибка остановки обучения "${modelIdentifier}": ${error.message}`, "error");
     }
   };
+  useEffect(() => {
+    return () => {
+      Object.values(metricsPollsRef.current).forEach(clearInterval);
+    };
+  }, []);
 
   const handleChange = (key, value) => {
     setParams((prev) => ({
@@ -318,6 +360,7 @@ function TrainingView({ collection, currentVersionId }) {
       setActiveTrainings(prev => [...prev, taskInfo]);
       
       createWebSocket(taskId, taskInfo);
+      startMetricsPolling(taskId, taskInfo);
 
       addLog(`Запущено обучение "${modelIdentifier}"`, "success");
       addLog(`Task ID: ${taskId}`, "info");
@@ -660,6 +703,47 @@ function TrainingView({ collection, currentVersionId }) {
           Start Training
         </button>
       </div>
+      {activeTrainings.map(training => {
+        const metrics = metricsData[training.taskId];
+        return (
+          <div key={training.taskId} className="training-metrics-block">
+            <div className="metrics-header">
+              <h4>{training.modelIdentifier} – метрики</h4>
+            </div>
+            {metrics && metrics.latest && (
+              <div className="current-metrics">
+                <p>Текущие (эпоха {metrics.latest.epoch}): mAP50 = {metrics.latest.mAP50?.toFixed(4) ?? '—'}, Precision = {metrics.latest.precision?.toFixed(4) ?? '—'}, Recall = {metrics.latest.recall?.toFixed(4) ?? '—'}, Loss = {metrics.latest.loss?.toFixed(4) ?? '—'}</p>
+                {metrics.best && <p>Лучшая mAP50: {metrics.best.mAP50.toFixed(4)} (эпоха {metrics.best.epoch})</p>}
+              </div>
+            )}
+            <table className="metrics-table">
+              <thead>
+                <tr>
+                  <th>Эпоха</th>
+                  <th>mAP50</th>
+                  <th>Precision</th>
+                  <th>Recall</th>
+                  <th>Loss</th>
+                </tr>
+              </thead>
+              <tbody>
+                {metrics && metrics.history && metrics.history.map((row, idx) => (
+                  <tr key={idx}>
+                    <td>{row.epoch}</td>
+                    <td>{row.mAP50?.toFixed(4) ?? '—'}</td>
+                    <td>{row.precision?.toFixed(4) ?? '—'}</td>
+                    <td>{row.recall?.toFixed(4) ?? '—'}</td>
+                    <td>{row.loss?.toFixed(4) ?? '—'}</td>
+                  </tr>
+                ))}
+                {!metrics && <tr><td colSpan="5">Загрузка метрик...</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        );
+      })}
+      
+
     </div>
   );
 }

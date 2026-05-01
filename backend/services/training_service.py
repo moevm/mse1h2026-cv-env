@@ -10,14 +10,14 @@ from ultralytics import YOLO
 from core.paths import get_project_paths
 from schemas.training_schema import TrainingRequestSchema, TrainingStatusSchema
 import torch
-
+import csv
 
 training_tasks: Dict[str, TrainingStatusSchema] = {}
 training_models: Dict[str, YOLO] = {}
 training_logs: Dict[str, List[str]] = {}
 training_events: Dict[str, threading.Event] = {}
 training_threads: Dict[str, threading.Thread] = {}
-
+training_exp_dirs: Dict[str, str] = {} 
 
 class TrainingCallback:
     """Колбэк для отслеживания прогресса обучения"""
@@ -200,6 +200,7 @@ def run_real_training(task_id: str, request: TrainingRequestSchema):
         
         exp_dir = os.path.join(training_dir, task_id)
         os.makedirs(exp_dir, exist_ok=True)
+        training_exp_dirs[task_id] = exp_dir
 
         use_coco8 = getattr(request.dataset, 'use_coco8', False)
 
@@ -364,8 +365,6 @@ def run_real_training(task_id: str, request: TrainingRequestSchema):
                 f.write(str(e))
     
     finally:
-        if task_id in training_models:
-            del training_models[task_id]
         add_training_log(task_id, "Очистка ресурсов завершена")
 
 
@@ -499,3 +498,79 @@ def stop_all_trainings():
     
     training_events.clear()
     training_threads.clear()
+
+
+def get_training_metrics(task_id: str) -> dict:
+    """Возвращает историю метрик из results.csv эксперимента"""
+    exp_dir = training_exp_dirs.get(task_id)
+    if not exp_dir:
+        # Возможно, обучение ещё не создало папку или оно завершено
+        # Попробуем найти папку по стандартному пути
+        from core.paths import get_project_paths
+        # Но без контекста не знаем workspace_path – вернём пустой результат
+        return {"history": [], "latest": None, "best": None}
+    
+    csv_path = os.path.join(exp_dir, "results.csv")
+    if not os.path.exists(csv_path):
+        return {"history": [], "latest": None, "best": None}
+    
+    # Читаем CSV вручную (без pandas)
+    import csv
+    rows = []
+    with open(csv_path, 'r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            rows.append(row)
+    
+    # Преобразуем в список словарей с нужными ключами
+    history = []
+    best_map50 = 0.0
+    best_epoch = 0
+    for row in rows:
+        epoch = int(row.get('epoch', 0))
+        # Ищем нужные столбцы по возможным именам
+        map50 = row.get('metrics/mAP50(B)')
+        if map50 is None:
+            map50 = row.get('mAP50')
+        precision = row.get('metrics/precision(B)')
+        recall = row.get('metrics/recall(B)')
+        loss = row.get('val/box_loss')
+        if loss is None:
+            loss = row.get('train/box_loss')
+        
+        # Преобразуем в числа, если возможно
+        try:
+            map50 = float(map50) if map50 else None
+        except:
+            map50 = None
+        try:
+            precision = float(precision) if precision else None
+        except:
+            precision = None
+        try:
+            recall = float(recall) if recall else None
+        except:
+            recall = None
+        try:
+            loss = float(loss) if loss else None
+        except:
+            loss = None
+        
+        history.append({
+            "epoch": epoch,
+            "mAP50": map50,
+            "precision": precision,
+            "recall": recall,
+            "loss": loss,
+        })
+        if map50 and map50 > best_map50:
+            best_map50 = map50
+            best_epoch = epoch
+    
+    latest = history[-1] if history else None
+    
+    return {
+        "history": history,
+        "latest": latest,
+        "best": {"mAP50": best_map50, "epoch": best_epoch} if best_epoch else None
+    }

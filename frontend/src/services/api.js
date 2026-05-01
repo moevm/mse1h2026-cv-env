@@ -239,3 +239,12 @@ export const deleteExperiment = async (expId, workspacePath) => {
   if (!res.ok) throw new Error("Ошибка удаления эксперимента");
   return await res.json();
 };
+
+export const getTrainingMetrics = async (taskId) => {
+  const res = await fetch(`${API_BASE_URL}/api/training/metrics/${taskId}`);
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.detail || "Ошибка получения метрик");
+  }
+  return await res.json();
+};
