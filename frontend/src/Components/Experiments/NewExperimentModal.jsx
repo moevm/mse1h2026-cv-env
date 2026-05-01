@@ -77,8 +77,8 @@ const NewExperimentModal = ({
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+    <div className="exp-modal-overlay" onClick={onClose}>
+      <div className="exp-modal-content" onClick={(e) => e.stopPropagation()}>
         <h3>🚀 Запуск нового эксперимента</h3>
         <form onSubmit={handleSubmit} noValidate>
           
@@ -112,7 +112,7 @@ const NewExperimentModal = ({
             />
           </label>
 
-          <hr style={{ margin: '20px 0', borderColor: '#444' }} />
+          <hr style={{ margin: '20px 0', borderColor: '#e5e7eb' }} />
 
           <label>Датасет: <span className="required">*</span>
             <select
@@ -135,11 +135,11 @@ const NewExperimentModal = ({
             />
           </label>
 
-          <div className="modal-actions" style={{ marginTop: '20px' }}>
-             <button className="primary-btn" type="submit" disabled={isLoading}>
+          <div className="exp-modal-actions" style={{ marginTop: '20px' }}>
+             <button className="exp-primary-btn" type="submit" disabled={isLoading}>
                 {isLoading ? "Запуск..." : "Запустить"}
              </button>
-             <button className="cancel-btn" type="button" onClick={onClose}>Отмена</button>
+             <button className="exp-cancel-btn" type="button" onClick={onClose}>Отмена</button>
           </div>
         </form>
       </div>
