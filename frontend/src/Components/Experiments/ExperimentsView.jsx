@@ -40,6 +40,8 @@ function ExperimentsView({ collection }) {
   const [showNewExpModal, setShowNewExpModal] = useState(false);
   const [availableModels, setAvailableModels] = useState([]);
   const [availableDatasets, setAvailableDatasets] = useState([]);
+  
+  const [isPolling, setIsPolling] = useState(false);
 
   if (!collection) {
     return (
@@ -49,16 +51,17 @@ function ExperimentsView({ collection }) {
     );
   }
 
-  const fetchExperiments = async () => {
-    setLoading(true);
+
+  const fetchExperiments = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const data = await getExperiments(collection.workspacePath, sortBy, sortOrder);
       setExperiments(data);
     } catch (err) {
       console.error("Failed to load experiments", err);
-      alert("Не удалось загрузить эксперименты: " + err.message);
+      if (!silent) alert("Не удалось загрузить эксперименты: " + err.message);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -75,10 +78,30 @@ function ExperimentsView({ collection }) {
     }
   };
 
+
   useEffect(() => {
     fetchExperiments();
     fetchModelsAndDatasets();
   }, [sortBy, sortOrder]);
+
+
+  const hasRunning = experiments.some(exp => exp.status === "running");
+
+  useEffect(() => {
+    let intervalId;
+    if (hasRunning) {
+      setIsPolling(true);
+      intervalId = setInterval(() => {
+        fetchExperiments(true); 
+      }, 4000); 
+    } else {
+      setIsPolling(false);
+    }
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [hasRunning]);
+
 
   const handleSelectExp = (expId) => {
     setSelectedExps((prev) =>
@@ -108,6 +131,7 @@ function ExperimentsView({ collection }) {
   const handleCreateExperiment = async (formData) => {
     await runExperiment(formData, collection.workspacePath);
     alert("✅ Эксперимент успешно запущен");
+
     fetchExperiments();
   };
 
@@ -205,10 +229,13 @@ function ExperimentsView({ collection }) {
             ))}
           </tbody>
         </table>
-        {loading && <div className="loading">Загрузка...</div>}
+        {/* Индикатор загрузки показываем только при явном действии, не при поллинге */}
+        {loading && !isPolling && <div className="loading">Загрузка...</div>}
         {!loading && experiments.length === 0 && (
           <div className="no-data">Нет завершённых экспериментов</div>
         )}
+        {/* Опционально: маленькая подсказка, что идёт автообновление */}
+        {isPolling && <div className="polling-hint">Автообновление статусов...</div>}
       </div>
 
       {showNewExpModal && (

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 
 const NewExperimentModal = ({ 
   onClose, 
@@ -16,6 +16,29 @@ const NewExperimentModal = ({
   });
   const [localLoading, setLocalLoading] = useState(false);
   const isLoading = parentLoading || localLoading;
+
+
+  const formatModelLabel = (model) => {
+    const path = model.value;
+    const originalLabel = model.label;
+    if (!path) return originalLabel;
+    
+
+    const parts = path.split(/[\\\/]/);
+    if (parts.length < 2) return originalLabel;
+    
+    const fileName = parts[parts.length - 1];
+    const parentFolder = parts[parts.length - 2];
+
+    return `${parentFolder}/${fileName}`;
+  };
+
+  const enhancedModels = useMemo(() => {
+    return availableModels.map(model => ({
+      ...model,
+      displayLabel: formatModelLabel(model)
+    }));
+  }, [availableModels]);
 
   useEffect(() => {
     if (availableModels.length > 0 && !form.model_path) {
@@ -54,8 +77,8 @@ const NewExperimentModal = ({
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+    <div className="exp-modal-overlay" onClick={onClose}>
+      <div className="exp-modal-content" onClick={(e) => e.stopPropagation()}>
         <h3>🚀 Запуск нового эксперимента</h3>
         <form onSubmit={handleSubmit} noValidate>
           
@@ -74,8 +97,8 @@ const NewExperimentModal = ({
               onChange={(e) => setForm({ ...form, model_path: e.target.value })}
             >
               <option value="" disabled>Выберите из списка...</option>
-              {availableModels.map((m) => (
-                <option key={m.value} value={m.value}>{m.label}</option>
+              {enhancedModels.map((m) => (
+                <option key={m.value} value={m.value}>{m.displayLabel}</option>
               ))}
             </select>
           </label>
@@ -89,7 +112,7 @@ const NewExperimentModal = ({
             />
           </label>
 
-          <hr style={{ margin: '20px 0', borderColor: '#444' }} />
+          <hr style={{ margin: '20px 0', borderColor: '#e5e7eb' }} />
 
           <label>Датасет: <span className="required">*</span>
             <select
@@ -112,11 +135,11 @@ const NewExperimentModal = ({
             />
           </label>
 
-          <div className="modal-actions" style={{ marginTop: '20px' }}>
-             <button className="primary-btn" type="submit" disabled={isLoading}>
+          <div className="exp-modal-actions" style={{ marginTop: '20px' }}>
+             <button className="exp-primary-btn" type="submit" disabled={isLoading}>
                 {isLoading ? "Запуск..." : "Запустить"}
              </button>
-             <button className="cancel-btn" type="button" onClick={onClose}>Отмена</button>
+             <button className="exp-cancel-btn" type="button" onClick={onClose}>Отмена</button>
           </div>
         </form>
       </div>
