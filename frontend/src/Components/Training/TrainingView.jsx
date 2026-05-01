@@ -10,6 +10,9 @@ import {
   getTrainingMetrics
 } from "../../services/api";
 import "../../styles/TrainingView.css";
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
+} from 'recharts';
 
 function TrainingView({ collection, currentVersionId }) {
   const [consoleLogs, setConsoleLogs] = useState([]);
@@ -22,6 +25,7 @@ function TrainingView({ collection, currentVersionId }) {
 
   // Словарь для хранения метрик по каждому активному обучению
   const [metricsData, setMetricsData] = useState({});
+  const [metricsPanelOpen, setMetricsPanelOpen] = useState({});
   
   const [params, setParams] = useState({
     model: "yolov8n",
@@ -58,6 +62,13 @@ function TrainingView({ collection, currentVersionId }) {
       message, 
       type 
     }]);
+  }, []);
+
+  const toggleMetricsPanel = useCallback((taskId) => {
+    setMetricsPanelOpen(prev => ({
+      ...prev,
+      [taskId]: !prev[taskId]
+    }));
   }, []);
 
   const createWebSocket = useCallback((taskId, taskInfo) => {
@@ -222,6 +233,135 @@ function TrainingView({ collection, currentVersionId }) {
 
   const clearLogs = () => {
     setConsoleLogs([]);
+  };
+  const prepareChartData = (history) => {
+    if (!history || history.length === 0) return [];
+    return history.map(row => ({
+      epoch: row.epoch,
+      mAP50: row.mAP50,
+      mAP50_95: row['mAP50-95'],
+      precision: row.precision,
+      recall: row.recall,
+      f1: row.precision && row.recall && (row.precision + row.recall) > 0 
+          ? 2 * (row.precision * row.recall) / (row.precision + row.recall) 
+          : null,
+      train_box_loss: row['train/box_loss'],
+      val_box_loss: row['val/box_loss']
+    }));
+  };
+
+  const renderMetricsPanel = (training, metrics) => {
+    const history = metrics.history || [];
+    const chartData = prepareChartData(history);
+    const latest = metrics.latest || {};
+    const best = metrics.best || {};
+
+    return (
+      <div className="metrics-panel">
+        <div className="metrics-summary-row">
+          <div className="metrics-chart-card">
+            <div className="metrics-chart-header">Loss / Epoch</div>
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={chartData} margin={{ top: 8, right: 12, left: -10, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e8eaed" />
+                <XAxis dataKey="epoch" tick={{ fontSize: 12 }} />
+                <YAxis tick={{ fontSize: 12 }} width={36} />
+                <Tooltip />
+                <Legend verticalAlign="top" height={36} />
+                <Line type="monotone" dataKey="train_box_loss" stroke="#ff6b6b" dot={false} name="Train box loss" />
+                <Line type="monotone" dataKey="val_box_loss" stroke="#1f78b4" dot={false} name="Val box loss" />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="metrics-chart-card">
+            <div className="metrics-chart-header">mAP / Epoch</div>
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={chartData} margin={{ top: 8, right: 12, left: -10, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e8eaed" />
+                <XAxis dataKey="epoch" tick={{ fontSize: 12 }} />
+                <YAxis tick={{ fontSize: 12 }} width={36} />
+                <Tooltip />
+                <Legend verticalAlign="top" height={36} />
+                <Line type="monotone" dataKey="mAP50" stroke="#2ecc71" dot={false} name="mAP50" />
+                <Line type="monotone" dataKey="mAP50_95" stroke="#9b59b6" dot={false} name="mAP50-95" />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="metrics-chart-card">
+            <div className="metrics-chart-header">Precision & Recall / Epoch</div>
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={chartData} margin={{ top: 8, right: 12, left: -10, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e8eaed" />
+                <XAxis dataKey="epoch" tick={{ fontSize: 12 }} />
+                <YAxis tick={{ fontSize: 12 }} width={36} />
+                <Tooltip />
+                <Legend verticalAlign="top" height={36} />
+                <Line type="monotone" dataKey="precision" stroke="#f39c12" dot={false} name="Precision" />
+                <Line type="monotone" dataKey="recall" stroke="#16a085" dot={false} name="Recall" />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+        <div className="metrics-table-wrapper">
+          <div className="metrics-table-header">
+            <div>
+              <strong>История метрик</strong>
+              <div className="metrics-table-subtitle">Все доступные значения по эпохам</div>
+            </div>
+            {best.mAP50 && (
+              <div className="metrics-best-card">
+                <span>Лучший mAP50</span>
+                <strong>{best.mAP50.toFixed(4)}</strong>
+                <span>эпоха {best.epoch}</span>
+              </div>
+            )}
+          </div>
+          <div className="table-scroll compact">
+            <table className="metrics-table-full">
+              <thead>
+                <tr>
+                  <th>Эпоха</th>
+                  <th>Train box</th>
+                  <th>Train cls</th>
+                  <th>Val box</th>
+                  <th>Val cls</th>
+                  <th>Precision</th>
+                  <th>Recall</th>
+                  <th>mAP50</th>
+                  <th>mAP50-95</th>
+                  <th>F1</th>
+                  <th>LR</th>
+                </tr>
+              </thead>
+              <tbody>
+                {history.length === 0 ? (
+                  <tr><td colSpan="11" style={{ textAlign: 'center' }}>Нет данных</td></tr>
+                ) : history.map((row, idx) => {
+                  const f1 = row.precision && row.recall && (row.precision + row.recall) > 0
+                    ? 2 * (row.precision * row.recall) / (row.precision + row.recall)
+                    : null;
+                  return (
+                    <tr key={idx} className={row.epoch === latest.epoch ? 'current-epoch' : ''}>
+                      <td>{row.epoch}</td>
+                      <td>{row['train/box_loss']?.toFixed(4) ?? '—'}</td>
+                      <td>{row['train/cls_loss']?.toFixed(4) ?? '—'}</td>
+                      <td>{row['val/box_loss']?.toFixed(4) ?? '—'}</td>
+                      <td>{row['val/cls_loss']?.toFixed(4) ?? '—'}</td>
+                      <td>{row.precision?.toFixed(4) ?? '—'}</td>
+                      <td>{row.recall?.toFixed(4) ?? '—'}</td>
+                      <td>{row.mAP50?.toFixed(4) ?? '—'}</td>
+                      <td>{row['mAP50-95']?.toFixed(4) ?? '—'}</td>
+                      <td>{f1?.toFixed(4) ?? '—'}</td>
+                      <td>{row.lr?.toExponential(2) ?? '—'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   const handleStopTraining = async (taskId, modelIdentifier) => {
@@ -617,12 +757,20 @@ function TrainingView({ collection, currentVersionId }) {
                       {training.versionName && ` / ${training.versionName}`}
                     </span>
                   </div>
-                  <button 
-                    className="stop-training-btn"
-                    onClick={() => handleStopTraining(training.taskId, training.modelIdentifier)}
-                  >
-                    Остановить
-                  </button>
+                  <div className="training-actions">
+                    <button
+                      className="metrics-toggle-btn"
+                      onClick={() => toggleMetricsPanel(training.taskId)}
+                    >
+                      {metricsPanelOpen[training.taskId] ? 'Скрыть метрики' : 'Показать метрики'}
+                    </button>
+                    <button 
+                      className="stop-training-btn"
+                      onClick={() => handleStopTraining(training.taskId, training.modelIdentifier)}
+                    >
+                      Остановить
+                    </button>
+                  </div>
                 </div>
                 <div className="training-details">
                   <div className="detail-item">
@@ -658,6 +806,11 @@ function TrainingView({ collection, currentVersionId }) {
                     <span>Запущено: {training.startedAt.toLocaleTimeString()}</span>
                   </div>
                 </div>
+                {metricsPanelOpen[training.taskId] && metricsData[training.taskId] && (
+                  <div className="metrics-panel-container">
+                    {renderMetricsPanel(training, metricsData[training.taskId])}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -703,47 +856,6 @@ function TrainingView({ collection, currentVersionId }) {
           Start Training
         </button>
       </div>
-      {activeTrainings.map(training => {
-        const metrics = metricsData[training.taskId];
-        return (
-          <div key={training.taskId} className="training-metrics-block">
-            <div className="metrics-header">
-              <h4>{training.modelIdentifier} – метрики</h4>
-            </div>
-            {metrics && metrics.latest && (
-              <div className="current-metrics">
-                <p>Текущие (эпоха {metrics.latest.epoch}): mAP50 = {metrics.latest.mAP50?.toFixed(4) ?? '—'}, Precision = {metrics.latest.precision?.toFixed(4) ?? '—'}, Recall = {metrics.latest.recall?.toFixed(4) ?? '—'}, Loss = {metrics.latest.loss?.toFixed(4) ?? '—'}</p>
-                {metrics.best && <p>Лучшая mAP50: {metrics.best.mAP50.toFixed(4)} (эпоха {metrics.best.epoch})</p>}
-              </div>
-            )}
-            <table className="metrics-table">
-              <thead>
-                <tr>
-                  <th>Эпоха</th>
-                  <th>mAP50</th>
-                  <th>Precision</th>
-                  <th>Recall</th>
-                  <th>Loss</th>
-                </tr>
-              </thead>
-              <tbody>
-                {metrics && metrics.history && metrics.history.map((row, idx) => (
-                  <tr key={idx}>
-                    <td>{row.epoch}</td>
-                    <td>{row.mAP50?.toFixed(4) ?? '—'}</td>
-                    <td>{row.precision?.toFixed(4) ?? '—'}</td>
-                    <td>{row.recall?.toFixed(4) ?? '—'}</td>
-                    <td>{row.loss?.toFixed(4) ?? '—'}</td>
-                  </tr>
-                ))}
-                {!metrics && <tr><td colSpan="5">Загрузка метрик...</td></tr>}
-              </tbody>
-            </table>
-          </div>
-        );
-      })}
-      
-
     </div>
   );
 }
