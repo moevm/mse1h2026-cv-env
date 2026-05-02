@@ -10,6 +10,32 @@ export const scanFolderOnBackend = async (path, virtualName) => {
   return await res.json();
 };
 
+export const scanVideoFolderOnBackend = async (path, virtualName, workspacePath, frameInterval = 30) => {
+  const params = new URLSearchParams({
+    path,
+    virtual_name: virtualName,
+    workspace_path: workspacePath || "",
+    frame_interval: String(frameInterval),
+  });
+  const res = await fetch(`${API_BASE_URL}/api/video/scan-folder?${params}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Ошибка обработки видео");
+  }
+  return await res.json();
+};
+
+export const scanDatasetFolderOnBackend = async (path, virtualName) => {
+  const res = await fetch(
+    `${API_BASE_URL}/api/projects/scan-folder-dataset?path=${encodeURIComponent(path)}&virtual_name=${encodeURIComponent(virtualName)}`
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Ошибка сканирования датасета");
+  }
+  return await res.json();
+};
+
 export const getImageUrl = (absolutePath) => {
   if (!absolutePath) return null;
   return `${API_BASE_URL}/api/utils/image?path=${encodeURIComponent(absolutePath)}`;
