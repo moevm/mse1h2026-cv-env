@@ -36,22 +36,36 @@ class TrainingCallback:
         try:
             if self.stop_event.is_set():
                 trainer.stop_training = True
-                return
+                raise StopTrainingException("Training stopped by user")
             
             pause_event = training_pause_events.get(self.task_id)
             if pause_event and pause_event.is_set():
-                # Модель уже сохранена в pause_training, просто прерываем
                 raise PauseTrainingException("Training paused by user")
             
             self.current_epoch = trainer.epoch + 1
             self.total_epochs = trainer.epochs
             self._update_status(trainer)
         except Exception as e:
-            if not isinstance(e, PauseTrainingException):
+            if not isinstance(e, (PauseTrainingException, StopTrainingException)):
+                print(f"[ERROR] Callback error for task {self.task_id}: {e}")
+            raise
+    def on_train_batch_end(self, trainer):
+        try:
+            if self.stop_event.is_set():
+                trainer.stop_training = True
+                raise StopTrainingException("Training stopped by user")
+            pause_event = training_pause_events.get(self.task_id)
+            if pause_event and pause_event.is_set():
+                raise PauseTrainingException("Training paused by user")
+        except Exception as e:
+            if not isinstance(e, (PauseTrainingException, StopTrainingException)):
                 print(f"[ERROR] Callback error for task {self.task_id}: {e}")
             raise
     def on_train_epoch_end(self, trainer):
         try:
+            if self.stop_event.is_set():
+                trainer.stop_training = True
+                raise StopTrainingException("Training stopped by user")
             pause_event = training_pause_events.get(self.task_id)
             if pause_event and pause_event.is_set():
                 raise PauseTrainingException("Training paused by user")  # ВЫБРАСЫВАЕМ ИСКЛЮЧЕНИЕ
@@ -60,7 +74,7 @@ class TrainingCallback:
             self.total_epochs = trainer.epochs
             self._update_status(trainer)
         except Exception as e:
-            if not isinstance(e, PauseTrainingException):
+            if not isinstance(e, (PauseTrainingException, StopTrainingException)):
                 print(f"[ERROR] Callback error for task {self.task_id}: {e}")
             raise
     
@@ -276,6 +290,7 @@ def run_real_training(task_id: str, request: TrainingRequestSchema, resume_flag:
         
         try:
             model.add_callback("on_train_epoch_start", callback.on_train_epoch_start)
+            model.add_callback("on_train_batch_end", callback.on_train_batch_end)
             model.add_callback("on_train_epoch_end", callback.on_train_epoch_end)
             add_training_log(task_id, "Callback успешно зарегистрирован")
             print(f"[DEBUG] Registered callbacks for task {task_id}")
@@ -372,6 +387,13 @@ def run_real_training(task_id: str, request: TrainingRequestSchema, resume_flag:
         else:
             add_training_log(task_id, "Обучение завершилось с ошибкой")
             training_tasks[task_id].status = "failed"
+    except StopTrainingException:
+        add_training_log(task_id, "Обучение остановлено пользователем")
+        task = training_tasks.get(task_id)
+        if task:
+            task.status = "stopped"
+            task.updated_at = datetime.now()
+
     except PauseTrainingException:
         add_training_log(task_id, "Обучение приостановлено пользователем")
         task = training_tasks.get(task_id)
@@ -496,8 +518,19 @@ def stop_training(task_id: str) -> bool:
     
     if task_id in training_events:
         training_events[task_id].set()
+        if task_id in training_pause_events:
+            del training_pause_events[task_id]
         add_training_log(task_id, "Получена команда остановки обучения")
         training_tasks[task_id].status = "stopping"
+        training_tasks[task_id].updated_at = datetime.now()
+        return True
+    
+    # Если задача уже приостановлена и event очищен, завершаем её вручную
+    if status in ["paused", "pausing"]:
+        if task_id in training_pause_events:
+            del training_pause_events[task_id]
+        add_training_log(task_id, "Обучение принудительно завершено")
+        training_tasks[task_id].status = "stopped"
         training_tasks[task_id].updated_at = datetime.now()
         return True
     
@@ -607,7 +640,7 @@ def resume_training(task_id: str) -> bool:
         return False
     status = training_tasks[task_id].status
     print(f"[RESUME] Current status: {status}")
-    if status not in ["stopped", "failed", "paused"]:
+    if status != "paused":
         print("[RESUME] Invalid status")
         return False
     
@@ -673,4 +706,8 @@ def pause_training(task_id: str) -> bool:
 
 class PauseTrainingException(Exception):
     """Исключение для остановки обучения при паузе."""
+    pass
+
+class StopTrainingException(Exception):
+    """Исключение для принудительной остановки обучения."""
     pass

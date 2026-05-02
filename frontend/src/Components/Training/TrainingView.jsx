@@ -872,10 +872,10 @@ function TrainingView({ collection, currentVersionId }) {
                     {training.status === 'running' && (
                       <button className="pause-training-btn" onClick={() => handlePauseTraining(training.taskId)}>Пауза</button>
                     )}
-                    {(training.status === 'paused' || training.status === 'stopped') && (
+                    {training.status === 'paused' && (
                       <button className="resume-training-btn" onClick={() => handleResumeTraining(training.taskId)}>Возобновить</button>
                     )}
-                    <button className="stop-training-btn" onClick={() => handleStopTraining(training.taskId, training.modelIdentifier)}>Остановить</button>
+                    <button className="stop-training-btn" onClick={() => handleStopTraining(training.taskId, training.modelIdentifier)}>Завершить</button>
                     
                     <button
                       className="metrics-toggle-btn"
@@ -889,7 +889,7 @@ function TrainingView({ collection, currentVersionId }) {
                     training.status === 'paused' ? 'Пауза' :
                     training.status === 'completed' ? 'Завершено' : 
                     training.status === 'failed' ? 'Ошибка' : 
-                    training.status === 'stopped' ? 'Остановлено' : training.status}
+                    training.status === 'stopped' ?  'Завершено' : training.status}
                   </span>
 
                 </div>
