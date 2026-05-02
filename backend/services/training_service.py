@@ -209,6 +209,7 @@ def run_real_training(task_id: str, request: TrainingRequestSchema, resume_flag:
         os.makedirs(exp_dir, exist_ok=True)
         training_exp_dirs[task_id] = exp_dir
 
+
         use_coco8 = getattr(request.dataset, 'use_coco8', False)
 
         if use_coco8:
@@ -405,6 +406,8 @@ def run_real_training(task_id: str, request: TrainingRequestSchema, resume_flag:
                 f.write(str(e))
     
     finally:
+        _save_dataset_version_with_weights(exp_dir, request)
+
         add_training_log(task_id, "Очистка ресурсов завершена")
 
 
@@ -685,3 +688,35 @@ def pause_training(task_id: str) -> bool:
     task.status = "pausing"
     task.updated_at = datetime.now()
     return True
+
+def _save_dataset_version_with_weights(exp_dir: str, request: TrainingRequestSchema, task_id: str = None):
+    if not exp_dir or not os.path.exists(exp_dir):
+        return
+
+    dataset = request.dataset
+    
+    # Проверяем, есть ли веса
+    best_exists = os.path.exists(os.path.join(exp_dir, "weights", "best.pt"))
+    last_exists = os.path.exists(os.path.join(exp_dir, "weights", "last.pt"))
+    
+    weights_info = {}
+    if best_exists:
+        weights_info["best"] = "weights/best.pt"
+    if last_exists:
+        weights_info["last"] = "weights/last.pt"
+
+    version_info = {
+        "dataset_id": dataset.id,
+        "dataset_name": dataset.name,
+        "version_id": dataset.versionId,
+        "version_name": dataset.versionName,
+        "active_folders": dataset.active_folders,
+        "classes": dataset.classes,
+        "use_coco8": dataset.use_coco8,
+        "model_weights": weights_info,  # просто ссылки, без хэшей
+        "trained_at": datetime.now().isoformat()
+    }
+    
+    version_path = os.path.join(exp_dir, "dataset_version.yaml")
+    with open(version_path, "w", encoding="utf-8") as f:
+        yaml.dump(version_info, f, allow_unicode=True, default_flow_style=False)
