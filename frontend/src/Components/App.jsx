@@ -10,7 +10,7 @@ import TrainingView from "./Training/TrainingView";
 import ExperimentsView from "./Experiments/ExperimentsView";
 
 import useCollections from "../hooks/useCollections";
-import { pickWorkspacePath, scanFolderOnBackend } from "../services/api";
+import { pickWorkspacePath, scanFolderOnBackend, scanVideoFolderOnBackend, scanDatasetFolderOnBackend } from "../services/api";
 
 import "../styles/App.css";
 
@@ -67,50 +67,77 @@ function App() {
     setCurrentCollectionId(collectionId);
   }
 
-  async function handleAddFolders() {
+  function _isDuplicateFolder(absolutePath) {
+    return (currentCollection?.folders || []).some(f => f.absolutePath === absolutePath);
+  }
+
+  async function handleAddPhotoFolder() {
     if (!currentCollectionId || !currentCollection) return;
-    
     try {
-      const absolutePath = await pickWorkspacePath(); 
+      const absolutePath = await pickWorkspacePath();
       if (!absolutePath) return;
+      if (_isDuplicateFolder(absolutePath)) { alert("Эта папка уже добавлена в проект!"); return; }
 
       const folderName = absolutePath.split(/[\\/]/).pop();
-      
-      let isDuplicate = false;
-      if (currentCollection.folders) {
-        for (const folder of currentCollection.folders) {
-          if (folder.absolutePath === absolutePath) {
-            isDuplicate = true; break;
-          }
-        }
-      }
-
-      if (isDuplicate) {
-        alert("Эта папка уже добавлена в проект!");
-        return;
-      }
-
-      const rootId = `src_${Date.now()}`;
-      const uniqueRootPath = `${rootId}_${folderName}`;
-
+      const uniqueRootPath = `src_${Date.now()}_${folderName}`;
       const scanResult = await scanFolderOnBackend(absolutePath, uniqueRootPath);
 
-      const rootNode = {
-        name: folderName,
-        path: uniqueRootPath, 
-        absolutePath: absolutePath, 
-        isEnabled: true,
-        children: scanResult.tree
-      };
-
+      const rootNode = { name: folderName, path: uniqueRootPath, absolutePath, isEnabled: true, folderType: "photos", children: scanResult.tree };
       const updatedFolders = [...(currentCollection.folders || []), rootNode];
-
       updateCollection(currentCollectionId, { folders: updatedFolders });
-
       await syncCollection(currentCollectionId, updatedFolders);
-
     } catch (error) {
-      console.log("Ошибка добавления папки:", error);
+      alert("Ошибка добавления папки с фото: " + error.message);
+    }
+  }
+
+  async function handleAddVideoFolder() {
+    if (!currentCollectionId || !currentCollection) return;
+    try {
+      const absolutePath = await pickWorkspacePath();
+      if (!absolutePath) return;
+      if (_isDuplicateFolder(absolutePath)) { alert("Эта папка уже добавлена в проект!"); return; }
+
+      const intervalStr = window.prompt("Каждый N-й кадр извлекать (например, 30 = каждый 30-й):", "30");
+      if (intervalStr === null) return;
+      const frameInterval = Math.max(1, parseInt(intervalStr, 10) || 30);
+
+      const folderName = absolutePath.split(/[\\/]/).pop();
+      const uniqueRootPath = `src_${Date.now()}_${folderName}`;
+      const workspacePath = currentCollection.workspacePath || "";
+
+      const scanResult = await scanVideoFolderOnBackend(absolutePath, uniqueRootPath, workspacePath, frameInterval);
+
+      const rootNode = {
+        name: folderName, path: uniqueRootPath, absolutePath, isEnabled: true,
+        folderType: "videos", framesDir: scanResult.frames_dir, frameInterval,
+        children: scanResult.tree,
+      };
+      const updatedFolders = [...(currentCollection.folders || []), rootNode];
+      updateCollection(currentCollectionId, { folders: updatedFolders });
+      await syncCollection(currentCollectionId, updatedFolders);
+    } catch (error) {
+      alert("Ошибка обработки видео: " + error.message);
+    }
+  }
+
+  async function handleAddDatasetFolder() {
+    if (!currentCollectionId || !currentCollection) return;
+    try {
+      const absolutePath = await pickWorkspacePath();
+      if (!absolutePath) return;
+      if (_isDuplicateFolder(absolutePath)) { alert("Эта папка уже добавлена в проект!"); return; }
+
+      const folderName = absolutePath.split(/[\\/]/).pop();
+      const uniqueRootPath = `src_${Date.now()}_${folderName}`;
+      const scanResult = await scanDatasetFolderOnBackend(absolutePath, uniqueRootPath);
+
+      const rootNode = { name: folderName, path: uniqueRootPath, absolutePath, isEnabled: true, folderType: "dataset", children: scanResult.tree };
+      const updatedFolders = [...(currentCollection.folders || []), rootNode];
+      updateCollection(currentCollectionId, { folders: updatedFolders });
+      await syncCollection(currentCollectionId, updatedFolders);
+    } catch (error) {
+      alert("Ошибка импорта датасета: " + error.message);
     }
   }
 
@@ -165,7 +192,9 @@ function App() {
           onCollectionClick={handleCollectionClick}
           onAddCollection={() => setShowManagerModal(true)}
           onDeleteCollection={handleDeleteCollection}
-          onAddFolders={handleAddFolders}
+          onAddPhotoFolder={handleAddPhotoFolder}
+          onAddVideoFolder={handleAddVideoFolder}
+          onAddDatasetFolder={handleAddDatasetFolder}
           onToggleFolder={handleToggleFolder}
         />
 
