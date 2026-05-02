@@ -4,13 +4,15 @@ from typing import Dict
 from schemas.training_schema import TrainingParamsSchema, TrainingRequestSchema
 from services.training_config import load_training_config, save_training_config
 from services.training_service import (
+    pause_training,
     start_training_async,
     get_training_status,
     get_training_logs,
     stop_training,
     validate_model_name,
     get_training_metrics,
-    resume_training
+    resume_training,
+    pause_training
 )
 
 
@@ -240,12 +242,16 @@ async def training_metrics(task_id: str):
         raise HTTPException(status_code=500, detail=str(e))
     
 
+@router.post("/pause/{task_id}")
+async def pause_training_endpoint(task_id: str):
+    result = pause_training(task_id)
+    if not result:
+        raise HTTPException(status_code=400, detail="Не удалось поставить обучение на паузу")
+    return {"status": "success", "message": "Обучение приостановлено"}
+
 @router.post("/resume/{task_id}")
 async def resume_training_endpoint(task_id: str):
-    try:
-        result = resume_training(task_id)
-        if not result:
-            raise HTTPException(status_code=400, detail="Не удалось возобновить обучение")
-        return {"status": "success", "task_id": task_id, "message": "Обучение возобновлено"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    result = resume_training(task_id)
+    if not result:
+        raise HTTPException(status_code=400, detail="Не удалось возобновить обучение")
+    return {"status": "success", "task_id": task_id, "message": "Обучение возобновлено"}

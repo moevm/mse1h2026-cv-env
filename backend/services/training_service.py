@@ -19,6 +19,8 @@ training_events: Dict[str, threading.Event] = {}
 training_threads: Dict[str, threading.Thread] = {}
 training_exp_dirs: Dict[str, str] = {} 
 training_requests: Dict[str, TrainingRequestSchema] = {}
+training_pause_events: Dict[str, threading.Event] = {}
+
 
 class TrainingCallback:
     """Колбэк для отслеживания прогресса обучения"""
@@ -30,36 +32,39 @@ class TrainingCallback:
         self.total_epochs = 0
         self.last_epoch = -1
         self.last_log_time = 0
-    
     def on_train_epoch_start(self, trainer):
-        """Вызывается в начале эпохи"""
         try:
             if self.stop_event.is_set():
                 trainer.stop_training = True
                 return
+            
+            pause_event = training_pause_events.get(self.task_id)
+            if pause_event and pause_event.is_set():
+                # Модель уже сохранена в pause_training, просто прерываем
+                raise PauseTrainingException("Training paused by user")
             
             self.current_epoch = trainer.epoch + 1
             self.total_epochs = trainer.epochs
-            
             self._update_status(trainer)
-            
         except Exception as e:
-            print(f"[ERROR] Callback error at epoch start for task {self.task_id}: {e}")
-    
+            if not isinstance(e, PauseTrainingException):
+                print(f"[ERROR] Callback error for task {self.task_id}: {e}")
+            raise
     def on_train_epoch_end(self, trainer):
-        """Вызывается в конце каждой эпохи - для финального обновления"""
         try:
-            if self.stop_event.is_set():
-                trainer.stop_training = True
-                return
+            pause_event = training_pause_events.get(self.task_id)
+            if pause_event and pause_event.is_set():
+                if hasattr(trainer, 'save_model'):
+                    trainer.save_model()  # сохраняем перед выходом
+                raise PauseTrainingException("Training paused by user")  # ВЫБРАСЫВАЕМ ИСКЛЮЧЕНИЕ
             
             self.current_epoch = trainer.epoch
             self.total_epochs = trainer.epochs
-            
             self._update_status(trainer)
-            
         except Exception as e:
-            print(f"[ERROR] Callback error for task {self.task_id}: {e}")
+            if not isinstance(e, PauseTrainingException):
+                print(f"[ERROR] Callback error for task {self.task_id}: {e}")
+            raise
     
     def _update_status(self, trainer):
         """Обновляет статус обучения"""
@@ -186,7 +191,7 @@ def run_dummy_training(task_id: str, request: TrainingRequestSchema):
         training_tasks[task_id].updated_at = datetime.now()
 
 
-def run_real_training(task_id: str, request: TrainingRequestSchema, resume_from: str = None):
+def run_real_training(task_id: str, request: TrainingRequestSchema, resume_flag: bool = False):
     """Реальное обучение YOLO"""
     stop_event = training_events.get(task_id)
     
@@ -291,7 +296,8 @@ def run_real_training(task_id: str, request: TrainingRequestSchema, resume_from:
             'warmup_epochs': request.warmup_epochs,
             'warmup_momentum': request.warmup_momentum,
             'warmup_bias_lr': request.warmup_bias_lr,
-            'resume': resume_from if resume_from else False,
+            'resume': resume_flag,
+            'save_period': request.save_period if request.save_period > 0 else 1,
             'project': training_dir,
             'name': task_id,
             'exist_ok': True,
@@ -321,6 +327,14 @@ def run_real_training(task_id: str, request: TrainingRequestSchema, resume_from:
         print(f"[DEBUG] Total epochs: {request.epochs}")
         
         results = model.train(**train_params)
+        if stop_event and stop_event.is_set():
+            task = training_tasks[task_id]
+            if task.status != "paused":   # если пауза уже установлена callback'ом
+                task.status = "stopped"
+            task.updated_at = datetime.now()
+            add_training_log(task_id, "Обучение остановлено")
+        elif training_tasks[task_id].status == "running":
+            training_tasks[task_id].status = "completed"
 
         print(f"[DEBUG] Training finished for task {task_id}")
         print(f"[DEBUG] Results: {results}")
@@ -351,7 +365,13 @@ def run_real_training(task_id: str, request: TrainingRequestSchema, resume_from:
         else:
             add_training_log(task_id, "Обучение завершилось с ошибкой")
             training_tasks[task_id].status = "failed"
-            
+    except PauseTrainingException:
+        add_training_log(task_id, "Обучение приостановлено пользователем")
+        task = training_tasks.get(task_id)
+        if task:
+            task.status = "paused"
+            task.updated_at = datetime.now()
+
     except Exception as e:
         error_msg = f"Ошибка обучения: {str(e)}"
         add_training_log(task_id, error_msg)
@@ -574,18 +594,38 @@ def _safe_float(value):
         return None
     
 def resume_training(task_id: str) -> bool:
+    print(f"[RESUME] Called for {task_id}")
     if task_id not in training_tasks:
+        print("[RESUME] Task not found")
         return False
-    if training_tasks[task_id].status not in ["stopped", "failed"]:
+    status = training_tasks[task_id].status
+    print(f"[RESUME] Current status: {status}")
+    if status not in ["stopped", "failed", "paused"]:
+        print("[RESUME] Invalid status")
         return False
+    
+    print("[RESUME] Clearing pause/stop events")
+    if task_id in training_pause_events:
+        del training_pause_events[task_id]
+    if task_id in training_events:
+        del training_events[task_id]
+    
     exp_dir = training_exp_dirs.get(task_id)
+    print(f"[RESUME] exp_dir = {exp_dir}")
     if not exp_dir:
+        print("[RESUME] No exp_dir")
         return False
+    
     last_pt = os.path.join(exp_dir, "last.pt")
+    print(f"[RESUME] last_pt = {last_pt}, exists = {os.path.exists(last_pt)}")
     if not os.path.exists(last_pt):
+        print("[RESUME] last.pt not found")
         return False
+    
     request = training_requests.get(task_id)
+    print(f"[RESUME] request = {request is not None}")
     if not request:
+        print("[RESUME] No request")
         return False
     
     # Удаляем старый stop_event, если есть (он уже сработал)
@@ -597,17 +637,41 @@ def resume_training(task_id: str) -> bool:
     
     # Обновляем статус
     training_tasks[task_id].status = "pending"
-    training_tasks[task_id].progress = 0
-    training_tasks[task_id].current_epoch = 0
     training_tasks[task_id].error = None
     training_tasks[task_id].updated_at = datetime.now()
     
-    # Запускаем новый поток с resume_from = last_pt
     thread = threading.Thread(
         target=run_real_training,
-        args=(task_id, request, last_pt),
+        args=(task_id, request, True),  # третий параметр - булево
         daemon=True
     )
     thread.start()
     training_threads[task_id] = thread
     return True
+
+def pause_training(task_id: str) -> bool:
+    if task_id not in training_tasks:
+        return False
+    task = training_tasks[task_id]
+    if task.status != "running":
+        return False
+    
+    # Принудительно сохраняем модель, чтобы потом возобновить
+    model = training_models.get(task_id)
+    exp_dir = training_exp_dirs.get(task_id)
+    if model and exp_dir:
+        last_path = os.path.join(exp_dir, "last.pt")
+        model.save(last_path)
+        add_training_log(task_id, f"Модель сохранена в {last_path}")
+    
+    pause_event = threading.Event()
+    training_pause_events[task_id] = pause_event
+    pause_event.set()
+    add_training_log(task_id, "Получена команда паузы обучения")
+    task.status = "pausing"
+    task.updated_at = datetime.now()
+    return True
+
+class PauseTrainingException(Exception):
+    """Исключение для остановки обучения при паузе."""
+    pass

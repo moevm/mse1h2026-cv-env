@@ -248,3 +248,15 @@ export const getTrainingMetrics = async (taskId) => {
   }
   return await res.json();
 };
+
+export const pauseTraining = async (taskId) => {
+  const res = await fetch(`${API_BASE_URL}/api/training/pause/${taskId}`, { method: "POST" });
+  if (!res.ok) throw new Error("Ошибка паузы обучения");
+  return await res.json();
+};
+
+export const resumeTraining = async (taskId) => {
+  const res = await fetch(`${API_BASE_URL}/api/training/resume/${taskId}`, { method: "POST" });
+  if (!res.ok) throw new Error("Ошибка возобновления обучения");
+  return await res.json();
+};

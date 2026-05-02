@@ -7,7 +7,9 @@ import {
   stopTraining,
   getAugmentations,
   getTrainingLogs,
-  getTrainingMetrics
+  getTrainingMetrics,
+  pauseTraining,
+  resumeTraining
 } from "../../services/api";
 import "../../styles/TrainingView.css";
 import {
@@ -92,74 +94,54 @@ function TrainingView({ collection, currentVersionId }) {
     };
     
     ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        console.log(`[WS] Status for ${taskId}: epoch=${data.current_epoch}, progress=${data.progress}%, status=${data.status}`);
-        
-        setActiveTrainings(prev => prev.map(task => 
-          task.taskId === taskId 
-            ? { 
-                ...task, 
-                status: data.status,
-                progress: Math.round(data.progress || 0),
-                currentEpoch: data.current_epoch,
-                totalEpochs: data.total_epochs,
-                loss: data.loss,
-                lastUpdate: new Date() 
-              }
-            : task
-        ));
-        
-        if (data.status === 'completed') {
-          stopMetricsPolling(taskId);
-          addLog(`Обучение "${taskInfo.modelIdentifier}" успешно завершено`, "success");
-          completedTasksRef.current.add(taskId);
-          
-          if (websocketsRef.current[taskId]) {
-            websocketsRef.current[taskId].close();
-            delete websocketsRef.current[taskId];
-          }
-          
-          setTimeout(() => {
-            setActiveTrainings(prev => prev.filter(task => task.taskId !== taskId));
-          }, 5000);
+    try {
+      const data = JSON.parse(event.data);
+      console.log(`[WS] Status for ${taskId}: epoch=${data.current_epoch}, progress=${data.progress}%, status=${data.status}`);
+      
+      setActiveTrainings(prev => prev.map(task => 
+        task.taskId === taskId 
+          ? { 
+              ...task, 
+              status: data.status,
+              progress: Math.round(data.progress || 0),
+              currentEpoch: data.current_epoch,
+              totalEpochs: data.total_epochs,
+              loss: data.loss,
+              lastUpdate: new Date() 
+            }
+          : task
+      ));
+      
+      if (data.status === 'completed') {
+        stopMetricsPolling(taskId);
+        addLog(`Обучение "${taskInfo.modelIdentifier}" успешно завершено`, "success");
+        if (websocketsRef.current[taskId]) {
+          websocketsRef.current[taskId].close();
+          delete websocketsRef.current[taskId];
         }
-        
-        if (data.status === 'failed') {
-          stopMetricsPolling(taskId);
-
-          addLog(`Обучение "${taskInfo.modelIdentifier}" не завершено: ${data.error || 'неизвестная ошибка'}`, "error");
-          completedTasksRef.current.add(taskId);
-          
-          if (websocketsRef.current[taskId]) {
-            websocketsRef.current[taskId].close();
-            delete websocketsRef.current[taskId];
-          }
-          
-          setTimeout(() => {
-            setActiveTrainings(prev => prev.filter(task => task.taskId !== taskId));
-          }, 10000);
-        }
-        
-        if (data.status === 'stopped') {
-          stopMetricsPolling(taskId);
-
-          addLog(`Обучение "${taskInfo.modelIdentifier}" остановлено`, "warning");
-          completedTasksRef.current.add(taskId);
-          
-          if (websocketsRef.current[taskId]) {
-            websocketsRef.current[taskId].close();
-            delete websocketsRef.current[taskId];
-          }
-          
-          setTimeout(() => {
-            setActiveTrainings(prev => prev.filter(task => task.taskId !== taskId));
-          }, 5000);
-        }
-      } catch (error) {
-        console.error('Error parsing WebSocket message:', error);
+        // Не удаляем задачу – оставляем для просмотра метрик и ручного удаления
       }
-    };
+      else if (data.status === 'failed') {
+        stopMetricsPolling(taskId);
+        addLog(`Обучение "${taskInfo.modelIdentifier}" не завершено: ${data.error || 'неизвестная ошибка'}`, "error");
+        if (websocketsRef.current[taskId]) {
+          websocketsRef.current[taskId].close();
+          delete websocketsRef.current[taskId];
+        }
+      }
+      else if (data.status === 'stopped') {
+        stopMetricsPolling(taskId);
+        addLog(`Обучение "${taskInfo.modelIdentifier}" остановлено`, "warning");
+        if (websocketsRef.current[taskId]) {
+          websocketsRef.current[taskId].close();
+          delete websocketsRef.current[taskId];
+        }
+        // Не удаляем – теперь кнопка "Возобновить" останется видимой
+      }
+    } catch (error) {
+      console.error('Error parsing WebSocket message:', error);
+    }
+  };
     
     ws.onerror = (error) => {
       console.error(`[WS] Error for task ${taskId}:`, error);
@@ -200,7 +182,12 @@ function TrainingView({ collection, currentVersionId }) {
     metricsPollsRef.current[taskId] = poll;
   }, []);
 
-
+  const stopMetricsPolling = useCallback((taskId) => {
+    if (metricsPollsRef.current[taskId]) {
+      clearInterval(metricsPollsRef.current[taskId]);
+      delete metricsPollsRef.current[taskId];
+    }
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -459,21 +446,54 @@ function TrainingView({ collection, currentVersionId }) {
     try {
       await stopTraining(taskId);
       stopMetricsPolling(taskId);
-
-      addLog(`Обучение "${modelIdentifier}" остановлено пользователем`, "info");
-      
-      completedTasksRef.current.add(taskId);
-      
+      addLog(`Обучение "${modelIdentifier}" остановлено`, "warning");
+      setActiveTrainings(prev => prev.map(task =>
+        task.taskId === taskId
+          ? { ...task, status: 'stopped', stopRequested: true, lastUpdate: new Date() }
+          : task
+      ));
       if (websocketsRef.current[taskId]) {
         websocketsRef.current[taskId].close();
         delete websocketsRef.current[taskId];
       }
-      
-      setActiveTrainings(prev => prev.filter(task => task.taskId !== taskId));
-      
     } catch (error) {
-      addLog(`Ошибка остановки обучения "${modelIdentifier}": ${error.message}`, "error");
+      addLog(`Ошибка остановки: ${error.message}`, "error");
     }
+  };
+  const handlePauseTraining = async (taskId) => {
+    try {
+      await pauseTraining(taskId);
+      addLog(`Обучение поставлено на паузу`, "info");
+    } catch (error) {
+      addLog(`Ошибка паузы обучения: ${error.message}`, "error");
+    }
+  };
+
+  const handleResumeTraining = async (taskId) => {
+    try {
+      await resumeTraining(taskId);
+      addLog(`Обучение возобновлено`, "success");
+      // Принудительно меняем статус в UI
+      setActiveTrainings(prev => prev.map(task =>
+        task.taskId === taskId
+          ? { ...task, status: 'running', lastUpdate: new Date() }
+          : task
+      ));
+    } catch (error) {
+      addLog(`Ошибка возобновления обучения: ${error.message}`, "error");
+    }
+  };
+  const handleRemoveTraining = (taskId, modelIdentifier) => {
+    setActiveTrainings(prev => prev.filter(task => task.taskId !== taskId));
+    if (metricsPollsRef.current[taskId]) {
+      clearInterval(metricsPollsRef.current[taskId]);
+      delete metricsPollsRef.current[taskId];
+    }
+    if (websocketsRef.current[taskId]) {
+      websocketsRef.current[taskId].close();
+      delete websocketsRef.current[taskId];
+    }
+    addLog(`Обучение "${modelIdentifier}" удалено из списка`, "info");
   };
   useEffect(() => {
     return () => {
@@ -849,19 +869,29 @@ function TrainingView({ collection, currentVersionId }) {
                     </span>
                   </div>
                   <div className="training-actions">
+                    {training.status === 'running' && (
+                      <button className="pause-training-btn" onClick={() => handlePauseTraining(training.taskId)}>Пауза</button>
+                    )}
+                    {(training.status === 'paused' || training.status === 'stopped') && (
+                      <button className="resume-training-btn" onClick={() => handleResumeTraining(training.taskId)}>Возобновить</button>
+                    )}
+                    <button className="stop-training-btn" onClick={() => handleStopTraining(training.taskId, training.modelIdentifier)}>Остановить</button>
+                    
                     <button
                       className="metrics-toggle-btn"
                       onClick={() => toggleMetricsPanel(training.taskId)}
                     >
                       {metricsPanelOpen[training.taskId] ? 'Скрыть метрики' : 'Показать метрики'}
                     </button>
-                    <button 
-                      className="stop-training-btn"
-                      onClick={() => handleStopTraining(training.taskId, training.modelIdentifier)}
-                    >
-                      Остановить
-                    </button>
                   </div>
+                  <span className={`status-badge status-${training.status}`}>
+                    {training.status === 'running' ? 'Выполняется' : 
+                    training.status === 'paused' ? 'Пауза' :
+                    training.status === 'completed' ? 'Завершено' : 
+                    training.status === 'failed' ? 'Ошибка' : 
+                    training.status === 'stopped' ? 'Остановлено' : training.status}
+                  </span>
+
                 </div>
                 <div className="training-details">
                   <div className="detail-item">
