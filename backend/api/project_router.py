@@ -4,7 +4,14 @@ import os
 import uuid
 from fastapi.responses import FileResponse
 from schemas.project_schema import ProjectInitRequest, ProjectUpdateRequest
-from services.project_service import *
+from services.project_service import (
+    pick_directory_dialog,
+    init_project_workspace,
+    update_project_workspace,
+    load_project_workspace,
+    scan_folder_structure,
+    scan_dataset_structure,
+)
 
 router = APIRouter(prefix="/api", tags=["Projects"])
 
@@ -54,6 +61,17 @@ async def scan_folder(path: str, virtual_name: str):
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/projects/scan-folder-dataset")
+async def scan_folder_dataset(path: str, virtual_name: str):
+    try:
+        result = await asyncio.to_thread(scan_dataset_structure, path, virtual_name)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/utils/image")
 async def serve_image(path: str):
