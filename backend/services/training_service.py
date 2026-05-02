@@ -54,8 +54,6 @@ class TrainingCallback:
         try:
             pause_event = training_pause_events.get(self.task_id)
             if pause_event and pause_event.is_set():
-                if hasattr(trainer, 'save_model'):
-                    trainer.save_model()  # сохраняем перед выходом
                 raise PauseTrainingException("Training paused by user")  # ВЫБРАСЫВАЕМ ИСКЛЮЧЕНИЕ
             
             self.current_epoch = trainer.epoch
@@ -256,7 +254,16 @@ def run_real_training(task_id: str, request: TrainingRequestSchema, resume_flag:
         
         add_training_log(task_id, f"Загрузка модели {request.model}...")
         
-        model = YOLO(request.model)
+        if resume_flag:
+            last_pt_path = os.path.join(exp_dir, "weights", "last.pt")
+            if os.path.exists(last_pt_path):
+                model = YOLO(last_pt_path)
+                add_training_log(task_id, f"Возобновление обучения с сохраненной модели {last_pt_path}")
+            else:
+                raise ValueError(f"Файл last.pt не найден для возобновления обучения: {last_pt_path}")
+        else:
+            model = YOLO(request.model)
+        
         training_models[task_id] = model
         
         device = request.device
@@ -616,7 +623,7 @@ def resume_training(task_id: str) -> bool:
         print("[RESUME] No exp_dir")
         return False
     
-    last_pt = os.path.join(exp_dir, "last.pt")
+    last_pt = os.path.join(exp_dir, "weights", "last.pt")
     print(f"[RESUME] last_pt = {last_pt}, exists = {os.path.exists(last_pt)}")
     if not os.path.exists(last_pt):
         print("[RESUME] last.pt not found")
@@ -655,14 +662,6 @@ def pause_training(task_id: str) -> bool:
     task = training_tasks[task_id]
     if task.status != "running":
         return False
-    
-    # Принудительно сохраняем модель, чтобы потом возобновить
-    model = training_models.get(task_id)
-    exp_dir = training_exp_dirs.get(task_id)
-    if model and exp_dir:
-        last_path = os.path.join(exp_dir, "last.pt")
-        model.save(last_path)
-        add_training_log(task_id, f"Модель сохранена в {last_path}")
     
     pause_event = threading.Event()
     training_pause_events[task_id] = pause_event
