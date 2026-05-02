@@ -868,22 +868,6 @@ function TrainingView({ collection, currentVersionId }) {
                       {training.versionName && ` / ${training.versionName}`}
                     </span>
                   </div>
-                  <div className="training-actions">
-                    {training.status === 'running' && (
-                      <button className="pause-training-btn" onClick={() => handlePauseTraining(training.taskId)}>Пауза</button>
-                    )}
-                    {training.status === 'paused' && (
-                      <button className="resume-training-btn" onClick={() => handleResumeTraining(training.taskId)}>Возобновить</button>
-                    )}
-                    <button className="stop-training-btn" onClick={() => handleStopTraining(training.taskId, training.modelIdentifier)}>Завершить</button>
-                    
-                    <button
-                      className="metrics-toggle-btn"
-                      onClick={() => toggleMetricsPanel(training.taskId)}
-                    >
-                      {metricsPanelOpen[training.taskId] ? 'Скрыть метрики' : 'Показать метрики'}
-                    </button>
-                  </div>
                   <span className={`status-badge status-${training.status}`}>
                     {training.status === 'running' ? 'Выполняется' : 
                     training.status === 'paused' ? 'Пауза' :
@@ -903,12 +887,29 @@ function TrainingView({ collection, currentVersionId }) {
                       {training.status === 'running' ? 'Выполняется' : 
                        training.status === 'completed' ? 'Завершено' : 
                        training.status === 'failed' ? 'Ошибка' : 
-                       training.status === 'stopped' ? 'Остановлено' : training.status}
+                       training.status === 'stopped' ? 'Завершено' : training.status}
                     </span>
                   </div>
                   {training.currentEpoch > 0 && training.totalEpochs && (
-                    <div className="detail-item">
-                      <span>Эпоха: {training.currentEpoch}/{training.totalEpochs}</span>
+                    <div className="epoch-actions-row">
+                      <div className="detail-item">
+                        <span>Эпоха: {training.currentEpoch}/{training.totalEpochs}</span>
+                      </div>
+                      <div className="epoch-actions">
+                        {training.status === 'running' && (
+                          <button className="pause-training-btn" onClick={() => handlePauseTraining(training.taskId)}>Пауза</button>
+                        )}
+                        {training.status === 'paused' && (
+                          <button className="resume-training-btn" onClick={() => handleResumeTraining(training.taskId)}>Возобновить</button>
+                        )}
+                        <button className="stop-training-btn" onClick={() => handleStopTraining(training.taskId, training.modelIdentifier)}>Завершить</button>
+                        <button
+                          className="metrics-toggle-btn"
+                          onClick={() => toggleMetricsPanel(training.taskId)}
+                        >
+                          {metricsPanelOpen[training.taskId] ? 'Скрыть метрики' : 'Показать метрики'}
+                        </button>
+                      </div>
                     </div>
                   )}
                   <div className="progress-bar-container">

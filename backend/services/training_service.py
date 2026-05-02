@@ -10,7 +10,9 @@ from ultralytics import YOLO
 from core.paths import get_project_paths
 from schemas.training_schema import TrainingRequestSchema, TrainingStatusSchema
 import torch
-import csv
+from services.exceptions import PauseTrainingException, StopTrainingException
+from services.logger import add_training_log, get_training_logs
+
 
 training_tasks: Dict[str, TrainingStatusSchema] = {}
 training_models: Dict[str, YOLO] = {}
@@ -68,7 +70,7 @@ class TrainingCallback:
                 raise StopTrainingException("Training stopped by user")
             pause_event = training_pause_events.get(self.task_id)
             if pause_event and pause_event.is_set():
-                raise PauseTrainingException("Training paused by user")  # ВЫБРАСЫВАЕМ ИСКЛЮЧЕНИЕ
+                raise PauseTrainingException("Training paused by user")
             
             self.current_epoch = trainer.epoch
             self.total_epochs = trainer.epochs
@@ -112,19 +114,6 @@ class TrainingCallback:
             
             self.last_epoch = self.current_epoch
 
-
-def add_training_log(task_id: str, message: str):
-    """Добавляет лог в хранилище"""
-    timestamp = datetime.now().strftime("%H:%M:%S")
-    log_entry = f"[{timestamp}] {message}"
-    
-    if task_id not in training_logs:
-        training_logs[task_id] = []
-    
-    training_logs[task_id].append(log_entry)
-    
-    if len(training_logs[task_id]) > 1000:
-        training_logs[task_id] = training_logs[task_id][-500:]
 
 
 def validate_model_name(model_name: str) -> Dict:
@@ -525,7 +514,6 @@ def stop_training(task_id: str) -> bool:
         training_tasks[task_id].updated_at = datetime.now()
         return True
     
-    # Если задача уже приостановлена и event очищен, завершаем её вручную
     if status in ["paused", "pausing"]:
         if task_id in training_pause_events:
             del training_pause_events[task_id]
@@ -542,12 +530,6 @@ def get_training_status(task_id: str) -> Optional[TrainingStatusSchema]:
     return training_tasks.get(task_id)
 
 
-def get_training_logs(task_id: str, limit: int = 100) -> List[str]:
-    """Возвращает последние логи"""
-    logs = training_logs.get(task_id, [])
-    if limit > 0:
-        return logs[-limit:]
-    return logs
 
 
 def stop_all_trainings():
@@ -577,7 +559,7 @@ def get_training_metrics(task_id: str) -> dict:
     rows = []
     with open(csv_path, 'r', encoding='utf-8') as f:
         reader = csv.DictReader(f)
-        fieldnames = reader.fieldnames  # сохраняем все имена колонок
+        fieldnames = reader.fieldnames 
         for row in reader:
             rows.append(row)
     
@@ -640,7 +622,7 @@ def resume_training(task_id: str) -> bool:
         return False
     status = training_tasks[task_id].status
     print(f"[RESUME] Current status: {status}")
-    if status != "paused":
+    if status not in ["stopped", "failed", "paused"]:
         print("[RESUME] Invalid status")
         return False
     
@@ -682,7 +664,7 @@ def resume_training(task_id: str) -> bool:
     
     thread = threading.Thread(
         target=run_real_training,
-        args=(task_id, request, True),  # третий параметр - булево
+        args=(task_id, request, True), 
         daemon=True
     )
     thread.start()
@@ -703,11 +685,3 @@ def pause_training(task_id: str) -> bool:
     task.status = "pausing"
     task.updated_at = datetime.now()
     return True
-
-class PauseTrainingException(Exception):
-    """Исключение для остановки обучения при паузе."""
-    pass
-
-class StopTrainingException(Exception):
-    """Исключение для принудительной остановки обучения."""
-    pass

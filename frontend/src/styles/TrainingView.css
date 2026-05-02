@@ -588,6 +588,38 @@
   transform: scale(1.05);
 }
 
+.training-view .pause-training-btn {
+  background-color: #f39c12;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.training-view .pause-training-btn:hover {
+  background-color: #d68910;
+  transform: scale(1.05);
+}
+
+.training-view .resume-training-btn {
+  background-color: #27ae60;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.training-view .resume-training-btn:hover {
+  background-color: #229954;
+  transform: scale(1.05);
+}
+
 .training-view .training-details {
   display: flex;
   flex-direction: column;
@@ -597,6 +629,18 @@
 .training-view .detail-item {
   font-size: 13px;
   color: #555;
+}
+
+.training-view .epoch-actions-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.training-view .epoch-actions {
+  display: flex;
+  gap: 6px;
 }
 
 .training-view .status-badge {
@@ -614,6 +658,16 @@
 
 .training-view .status-completed {
   background-color: #27ae60;
+  color: white;
+}
+
+.training-view .status-stopped {
+  background-color: #e74c3c;
+  color: white;
+}
+
+.training-view .status-paused {
+  background-color: #f39c12;
   color: white;
 }
 
