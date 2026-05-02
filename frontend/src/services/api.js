@@ -239,3 +239,24 @@ export const deleteExperiment = async (expId, workspacePath) => {
   if (!res.ok) throw new Error("Ошибка удаления эксперимента");
   return await res.json();
 };
+
+export const getTrainingMetrics = async (taskId) => {
+  const res = await fetch(`${API_BASE_URL}/api/training/metrics/${taskId}`);
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.detail || "Ошибка получения метрик");
+  }
+  return await res.json();
+};
+
+export const pauseTraining = async (taskId) => {
+  const res = await fetch(`${API_BASE_URL}/api/training/pause/${taskId}`, { method: "POST" });
+  if (!res.ok) throw new Error("Ошибка паузы обучения");
+  return await res.json();
+};
+
+export const resumeTraining = async (taskId) => {
+  const res = await fetch(`${API_BASE_URL}/api/training/resume/${taskId}`, { method: "POST" });
+  if (!res.ok) throw new Error("Ошибка возобновления обучения");
+  return await res.json();
+};

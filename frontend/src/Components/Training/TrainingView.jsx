@@ -4,13 +4,17 @@ import {
   saveTrainingConfig, 
   startTraining, 
   validateModel,
-  getTrainingStatus,
   stopTraining,
   getAugmentations,
-  getTrainingLogs
+  getTrainingLogs,
+  getTrainingMetrics,
+  pauseTraining,
+  resumeTraining
 } from "../../services/api";
-import { getDisabledFolderPaths } from "../../utils/fileSystem";
 import "../../styles/TrainingView.css";
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
+} from 'recharts';
 
 function TrainingView({ collection, currentVersionId }) {
   const [consoleLogs, setConsoleLogs] = useState([]);
@@ -19,6 +23,12 @@ function TrainingView({ collection, currentVersionId }) {
   const [isValidating, setIsValidating] = useState(false);
   const completedTasksRef = useRef(new Set());
   const websocketsRef = useRef({});
+   const metricsPollsRef = useRef({}); // для хранения таймеров опроса метрик
+
+  // Словарь для хранения метрик по каждому активному обучению
+  const [metricsData, setMetricsData] = useState({});
+  const [metricsPanelOpen, setMetricsPanelOpen] = useState({});
+  const [metricsHistoryOpen, setMetricsHistoryOpen] = useState({});
   
   const [params, setParams] = useState({
     model: "yolov8n",
@@ -44,7 +54,7 @@ function TrainingView({ collection, currentVersionId }) {
   });
 
   const [augmentationParams, setAugmentationParams] = useState(null);
-  
+
   const currentVersion = collection?.versions?.find(v => v.id === currentVersionId);
 
   const addLog = useCallback((message, type = "info") => {
@@ -55,6 +65,20 @@ function TrainingView({ collection, currentVersionId }) {
       message, 
       type 
     }]);
+  }, []);
+
+  const toggleMetricsPanel = useCallback((taskId) => {
+    setMetricsPanelOpen(prev => ({
+      ...prev,
+      [taskId]: !prev[taskId]
+    }));
+  }, []);
+
+  const toggleMetricsHistory = useCallback((taskId) => {
+    setMetricsHistoryOpen(prev => ({
+      ...prev,
+      [taskId]: !prev[taskId]
+    }));
   }, []);
 
   const createWebSocket = useCallback((taskId, taskInfo) => {
@@ -70,69 +94,54 @@ function TrainingView({ collection, currentVersionId }) {
     };
     
     ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        console.log(`[WS] Status for ${taskId}: epoch=${data.current_epoch}, progress=${data.progress}%, status=${data.status}`);
-        
-        setActiveTrainings(prev => prev.map(task => 
-          task.taskId === taskId 
-            ? { 
-                ...task, 
-                status: data.status,
-                progress: Math.round(data.progress || 0),
-                currentEpoch: data.current_epoch,
-                totalEpochs: data.total_epochs,
-                loss: data.loss,
-                lastUpdate: new Date() 
-              }
-            : task
-        ));
-        
-        if (data.status === 'completed') {
-          addLog(`Обучение "${taskInfo.modelIdentifier}" успешно завершено`, "success");
-          completedTasksRef.current.add(taskId);
-          
-          if (websocketsRef.current[taskId]) {
-            websocketsRef.current[taskId].close();
-            delete websocketsRef.current[taskId];
-          }
-          
-          setTimeout(() => {
-            setActiveTrainings(prev => prev.filter(task => task.taskId !== taskId));
-          }, 5000);
+    try {
+      const data = JSON.parse(event.data);
+      console.log(`[WS] Status for ${taskId}: epoch=${data.current_epoch}, progress=${data.progress}%, status=${data.status}`);
+      
+      setActiveTrainings(prev => prev.map(task => 
+        task.taskId === taskId 
+          ? { 
+              ...task, 
+              status: data.status,
+              progress: Math.round(data.progress || 0),
+              currentEpoch: data.current_epoch,
+              totalEpochs: data.total_epochs,
+              loss: data.loss,
+              lastUpdate: new Date() 
+            }
+          : task
+      ));
+      
+      if (data.status === 'completed') {
+        stopMetricsPolling(taskId);
+        addLog(`Обучение "${taskInfo.modelIdentifier}" успешно завершено`, "success");
+        if (websocketsRef.current[taskId]) {
+          websocketsRef.current[taskId].close();
+          delete websocketsRef.current[taskId];
         }
-        
-        if (data.status === 'failed') {
-          addLog(`Обучение "${taskInfo.modelIdentifier}" не завершено: ${data.error || 'неизвестная ошибка'}`, "error");
-          completedTasksRef.current.add(taskId);
-          
-          if (websocketsRef.current[taskId]) {
-            websocketsRef.current[taskId].close();
-            delete websocketsRef.current[taskId];
-          }
-          
-          setTimeout(() => {
-            setActiveTrainings(prev => prev.filter(task => task.taskId !== taskId));
-          }, 10000);
-        }
-        
-        if (data.status === 'stopped') {
-          addLog(`Обучение "${taskInfo.modelIdentifier}" остановлено`, "warning");
-          completedTasksRef.current.add(taskId);
-          
-          if (websocketsRef.current[taskId]) {
-            websocketsRef.current[taskId].close();
-            delete websocketsRef.current[taskId];
-          }
-          
-          setTimeout(() => {
-            setActiveTrainings(prev => prev.filter(task => task.taskId !== taskId));
-          }, 5000);
-        }
-      } catch (error) {
-        console.error('Error parsing WebSocket message:', error);
+        // Не удаляем задачу – оставляем для просмотра метрик и ручного удаления
       }
-    };
+      else if (data.status === 'failed') {
+        stopMetricsPolling(taskId);
+        addLog(`Обучение "${taskInfo.modelIdentifier}" не завершено: ${data.error || 'неизвестная ошибка'}`, "error");
+        if (websocketsRef.current[taskId]) {
+          websocketsRef.current[taskId].close();
+          delete websocketsRef.current[taskId];
+        }
+      }
+      else if (data.status === 'stopped') {
+        stopMetricsPolling(taskId);
+        addLog(`Обучение "${taskInfo.modelIdentifier}" остановлено`, "warning");
+        if (websocketsRef.current[taskId]) {
+          websocketsRef.current[taskId].close();
+          delete websocketsRef.current[taskId];
+        }
+        // Не удаляем – теперь кнопка "Возобновить" останется видимой
+      }
+    } catch (error) {
+      console.error('Error parsing WebSocket message:', error);
+    }
+  };
     
     ws.onerror = (error) => {
       console.error(`[WS] Error for task ${taskId}:`, error);
@@ -148,6 +157,38 @@ function TrainingView({ collection, currentVersionId }) {
     websocketsRef.current[taskId] = ws;
   }, [addLog]);
   
+  const startMetricsPolling = useCallback((taskId, taskInfo) => {
+    if (metricsPollsRef.current[taskId]) clearInterval(metricsPollsRef.current[taskId]);
+    
+    const poll = setInterval(async () => {
+      try {
+        const data = await getTrainingMetrics(taskId);
+        setMetricsData(prev => ({
+          ...prev,
+          [taskId]: data
+        }));
+        // Обновляем также в activeTrainings (если нужно)
+        setActiveTrainings(prev => prev.map(t => 
+          t.taskId === taskId ? { ...t, metrics: data.latest } : t
+        ));
+      } catch (error) {
+        // Если обучение завершено и metrics уже нет – остановим опрос
+        if (error.message.includes("404")) {
+          if (metricsPollsRef.current[taskId]) clearInterval(metricsPollsRef.current[taskId]);
+          delete metricsPollsRef.current[taskId];
+        }
+      }
+    }, 2000);
+    metricsPollsRef.current[taskId] = poll;
+  }, []);
+
+  const stopMetricsPolling = useCallback((taskId) => {
+    if (metricsPollsRef.current[taskId]) {
+      clearInterval(metricsPollsRef.current[taskId]);
+      delete metricsPollsRef.current[taskId];
+    }
+  }, []);
+
   useEffect(() => {
     return () => {
       Object.values(websocketsRef.current).forEach(ws => {
@@ -189,24 +230,276 @@ function TrainingView({ collection, currentVersionId }) {
     setConsoleLogs([]);
   };
 
+  const formatDuration = (ms) => {
+    if (ms == null || ms < 0) return "—";
+    const totalSeconds = Math.round(ms / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    if (hours > 0) return `${hours}ч ${minutes}м`;
+    if (minutes > 0) return `${minutes}м ${seconds}с`;
+    return `${seconds}s`;
+  };
+
+  const getEstimatedRemaining = (training) => {
+    try {
+      const { startedAt, currentEpoch, totalEpochs, progress } = training;
+      if (!startedAt) return null;
+      const started = new Date(startedAt);
+      const elapsed = Date.now() - started.getTime();
+      if (currentEpoch > 0 && totalEpochs > currentEpoch) {
+        const avgPerEpoch = elapsed / currentEpoch;
+        return avgPerEpoch * (totalEpochs - currentEpoch);
+      }
+      if (progress > 0) {
+        const remaining = elapsed / (progress / 100) - elapsed;
+        return remaining > 0 ? remaining : 0;
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  };
+
+  const getKeyMetric = (training) => {
+    const metrics = metricsData[training.taskId];
+    if (!metrics || !metrics.latest) return null;
+    const latest = metrics.latest;
+    if (latest.mAP50 != null) {
+      return { label: 'mAP50', value: latest.mAP50.toFixed(4) };
+    }
+    if (latest.precision != null) {
+      return { label: 'Precision', value: latest.precision.toFixed(4) };
+    }
+    if (latest.recall != null) {
+      return { label: 'Recall', value: latest.recall.toFixed(4) };
+    }
+    if (training.loss != null) {
+      return { label: 'Loss', value: training.loss.toFixed(4) };
+    }
+    return null;
+  };
+
+  const prepareChartData = (history) => {
+    if (!history || history.length === 0) return [];
+    return history.map(row => ({
+      epoch: row.epoch,
+      mAP50: row.mAP50,
+      mAP50_95: row['mAP50-95'],
+      precision: row.precision,
+      recall: row.recall,
+      f1: row.precision && row.recall && (row.precision + row.recall) > 0 
+          ? 2 * (row.precision * row.recall) / (row.precision + row.recall) 
+          : null,
+      train_box_loss: row['train/box_loss'],
+      train_cls_loss: row['train/cls_loss'],
+      val_box_loss: row['val/box_loss'],
+      val_cls_loss: row['val/cls_loss']
+    }));
+  };
+
+  const renderMetricsPanel = (training, metrics) => {
+    const history = metrics.history || [];
+    const chartData = prepareChartData(history);
+    const latest = metrics.latest || {};
+    const best = metrics.best || {};
+    const historyOpen = metricsHistoryOpen[training.taskId] ?? true;
+
+    return (
+      <div className="metrics-panel">
+        <div className="metrics-panel-accordion-header">
+          <div>
+            <strong>Метрики обучения</strong>
+            <div className="metrics-panel-accordion-description">Графики и история доступны в раскрывающемся разделе</div>
+          </div>
+          <div className="metrics-panel-accordion-meta">
+            {getKeyMetric(training) && (
+              <span className="metrics-panel-meta-item">
+                {getKeyMetric(training).label}: {getKeyMetric(training).value}
+              </span>
+            )}
+            {getEstimatedRemaining(training) != null && (
+              <span className="metrics-panel-meta-item">
+                Осталось: {formatDuration(getEstimatedRemaining(training))}
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="metrics-panel-content">
+          <div className="metrics-summary-row">
+            <div className="metrics-chart-card">
+            <div className="metrics-chart-header">Loss / Epoch</div>
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={chartData} margin={{ top: 8, right: 12, left: -10, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e8eaed" />
+                <XAxis dataKey="epoch" tick={{ fontSize: 12 }} />
+                <YAxis tick={{ fontSize: 12 }} width={36} />
+                <Tooltip />
+                <Legend verticalAlign="top" height={36} />
+                <Line type="monotone" dataKey="train_box_loss" stroke="#ff6b6b" dot={false} name="Train box loss" />
+                <Line type="monotone" dataKey="val_box_loss" stroke="#1f78b4" dot={false} name="Val box loss" />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="metrics-chart-card">
+            <div className="metrics-chart-header">mAP / Epoch</div>
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={chartData} margin={{ top: 8, right: 12, left: -10, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e8eaed" />
+                <XAxis dataKey="epoch" tick={{ fontSize: 12 }} />
+                <YAxis tick={{ fontSize: 12 }} width={36} />
+                <Tooltip />
+                <Legend verticalAlign="top" height={36} />
+                <Line type="monotone" dataKey="mAP50" stroke="#2ecc71" dot={false} name="mAP50" />
+                <Line type="monotone" dataKey="mAP50_95" stroke="#9b59b6" dot={false} name="mAP50-95" />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="metrics-chart-card">
+            <div className="metrics-chart-header">Precision & Recall / Epoch</div>
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={chartData} margin={{ top: 8, right: 12, left: -10, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e8eaed" />
+                <XAxis dataKey="epoch" tick={{ fontSize: 12 }} />
+                <YAxis tick={{ fontSize: 12 }} width={36} />
+                <Tooltip />
+                <Legend verticalAlign="top" height={36} />
+                <Line type="monotone" dataKey="precision" stroke="#f39c12" dot={false} name="Precision" />
+                <Line type="monotone" dataKey="recall" stroke="#16a085" dot={false} name="Recall" />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+        <div className="metrics-table-wrapper">
+          
+          <div className="metrics-table-actions">
+            
+            {best.mAP50 && (
+              <div className="metrics-best-card">
+                <span>Лучший mAP50: <strong>{best.mAP50.toFixed(4)}</strong> эпоха {best.epoch}</span>
+              </div>
+            )}
+            <button
+              className="metrics-history-toggle-btn"
+              onClick={() => toggleMetricsHistory(training.taskId)}
+            >
+              {historyOpen ? 'Свернуть историю' : 'Показать историю'}
+            </button>
+
+          </div>
+          {historyOpen ? (
+            <div className="table-scroll compact">
+              <table className="metrics-table-full">
+                <thead>
+                  <tr>
+                    <th>Эпоха</th>
+                    <th>Train box</th>
+                    <th>Train cls</th>
+                    <th>Val box</th>
+                    <th>Val cls</th>
+                    <th>Precision</th>
+                    <th>Recall</th>
+                    <th>mAP50</th>
+                    <th>mAP50-95</th>
+                    <th>F1</th>
+                    <th>LR</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {history.length === 0 ? (
+                    <tr><td colSpan="11" style={{ textAlign: 'center' }}>Нет данных</td></tr>
+                  ) : history.map((row, idx) => {
+                    const f1 = row.precision && row.recall && (row.precision + row.recall) > 0
+                      ? 2 * (row.precision * row.recall) / (row.precision + row.recall)
+                      : null;
+                    return (
+                      <tr key={idx} className={row.epoch === latest.epoch ? 'current-epoch' : ''}>
+                        <td>{row.epoch}</td>
+                        <td>{row['train/box_loss']?.toFixed(4) ?? '—'}</td>
+                        <td>{row['train/cls_loss']?.toFixed(4) ?? '—'}</td>
+                        <td>{row['val/box_loss']?.toFixed(4) ?? '—'}</td>
+                        <td>{row['val/cls_loss']?.toFixed(4) ?? '—'}</td>
+                        <td>{row.precision?.toFixed(4) ?? '—'}</td>
+                        <td>{row.recall?.toFixed(4) ?? '—'}</td>
+                        <td>{row.mAP50?.toFixed(4) ?? '—'}</td>
+                        <td>{row['mAP50-95']?.toFixed(4) ?? '—'}</td>
+                        <td>{f1?.toFixed(4) ?? '—'}</td>
+                        <td>{row.lr?.toExponential(2) ?? '—'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div>
+            </div>
+          )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const handleStopTraining = async (taskId, modelIdentifier) => {
     try {
       await stopTraining(taskId);
-      addLog(`Обучение "${modelIdentifier}" остановлено пользователем`, "info");
-      
-      completedTasksRef.current.add(taskId);
-      
+      stopMetricsPolling(taskId);
+      addLog(`Обучение "${modelIdentifier}" остановлено`, "warning");
+      setActiveTrainings(prev => prev.map(task =>
+        task.taskId === taskId
+          ? { ...task, status: 'stopped', stopRequested: true, lastUpdate: new Date() }
+          : task
+      ));
       if (websocketsRef.current[taskId]) {
         websocketsRef.current[taskId].close();
         delete websocketsRef.current[taskId];
       }
-      
-      setActiveTrainings(prev => prev.filter(task => task.taskId !== taskId));
-      
     } catch (error) {
-      addLog(`Ошибка остановки обучения "${modelIdentifier}": ${error.message}`, "error");
+      addLog(`Ошибка остановки: ${error.message}`, "error");
     }
   };
+  const handlePauseTraining = async (taskId) => {
+    try {
+      await pauseTraining(taskId);
+      addLog(`Обучение поставлено на паузу`, "info");
+    } catch (error) {
+      addLog(`Ошибка паузы обучения: ${error.message}`, "error");
+    }
+  };
+
+  const handleResumeTraining = async (taskId) => {
+    try {
+      await resumeTraining(taskId);
+      addLog(`Обучение возобновлено`, "success");
+      // Принудительно меняем статус в UI
+      setActiveTrainings(prev => prev.map(task =>
+        task.taskId === taskId
+          ? { ...task, status: 'running', lastUpdate: new Date() }
+          : task
+      ));
+    } catch (error) {
+      addLog(`Ошибка возобновления обучения: ${error.message}`, "error");
+    }
+  };
+  const handleRemoveTraining = (taskId, modelIdentifier) => {
+    setActiveTrainings(prev => prev.filter(task => task.taskId !== taskId));
+    if (metricsPollsRef.current[taskId]) {
+      clearInterval(metricsPollsRef.current[taskId]);
+      delete metricsPollsRef.current[taskId];
+    }
+    if (websocketsRef.current[taskId]) {
+      websocketsRef.current[taskId].close();
+      delete websocketsRef.current[taskId];
+    }
+    addLog(`Обучение "${modelIdentifier}" удалено из списка`, "info");
+  };
+  useEffect(() => {
+    return () => {
+      Object.values(metricsPollsRef.current).forEach(clearInterval);
+    };
+  }, []);
 
   const handleChange = (key, value) => {
     setParams((prev) => ({
@@ -318,6 +611,7 @@ function TrainingView({ collection, currentVersionId }) {
       setActiveTrainings(prev => [...prev, taskInfo]);
       
       createWebSocket(taskId, taskInfo);
+      startMetricsPolling(taskId, taskInfo);
 
       addLog(`Запущено обучение "${modelIdentifier}"`, "success");
       addLog(`Task ID: ${taskId}`, "info");
@@ -565,7 +859,7 @@ function TrainingView({ collection, currentVersionId }) {
         ) : (
           <div className="trainings-list">
             {activeTrainings.map((training) => (
-              <div key={training.taskId} className="training-item">
+              <div key={training.taskId} className={`training-item ${metricsPanelOpen[training.taskId] ? 'open' : ''}`}>
                 <div className="training-header">
                   <div className="training-info">
                     <span className="training-name">{training.modelIdentifier}</span>
@@ -574,12 +868,14 @@ function TrainingView({ collection, currentVersionId }) {
                       {training.versionName && ` / ${training.versionName}`}
                     </span>
                   </div>
-                  <button 
-                    className="stop-training-btn"
-                    onClick={() => handleStopTraining(training.taskId, training.modelIdentifier)}
-                  >
-                    Остановить
-                  </button>
+                  <span className={`status-badge status-${training.status}`}>
+                    {training.status === 'running' ? 'Выполняется' : 
+                    training.status === 'paused' ? 'Пауза' :
+                    training.status === 'completed' ? 'Завершено' : 
+                    training.status === 'failed' ? 'Ошибка' : 
+                    training.status === 'stopped' ?  'Завершено' : training.status}
+                  </span>
+
                 </div>
                 <div className="training-details">
                   <div className="detail-item">
@@ -591,12 +887,29 @@ function TrainingView({ collection, currentVersionId }) {
                       {training.status === 'running' ? 'Выполняется' : 
                        training.status === 'completed' ? 'Завершено' : 
                        training.status === 'failed' ? 'Ошибка' : 
-                       training.status === 'stopped' ? 'Остановлено' : training.status}
+                       training.status === 'stopped' ? 'Завершено' : training.status}
                     </span>
                   </div>
                   {training.currentEpoch > 0 && training.totalEpochs && (
-                    <div className="detail-item">
-                      <span>Эпоха: {training.currentEpoch}/{training.totalEpochs}</span>
+                    <div className="epoch-actions-row">
+                      <div className="detail-item">
+                        <span>Эпоха: {training.currentEpoch}/{training.totalEpochs}</span>
+                      </div>
+                      <div className="epoch-actions">
+                        {training.status === 'running' && (
+                          <button className="pause-training-btn" onClick={() => handlePauseTraining(training.taskId)}>Пауза</button>
+                        )}
+                        {training.status === 'paused' && (
+                          <button className="resume-training-btn" onClick={() => handleResumeTraining(training.taskId)}>Возобновить</button>
+                        )}
+                        <button className="stop-training-btn" onClick={() => handleStopTraining(training.taskId, training.modelIdentifier)}>Завершить</button>
+                        <button
+                          className="metrics-toggle-btn"
+                          onClick={() => toggleMetricsPanel(training.taskId)}
+                        >
+                          {metricsPanelOpen[training.taskId] ? 'Скрыть метрики' : 'Показать метрики'}
+                        </button>
+                      </div>
                     </div>
                   )}
                   <div className="progress-bar-container">
@@ -611,10 +924,25 @@ function TrainingView({ collection, currentVersionId }) {
                       <span>Loss: {training.loss.toFixed(4)}</span>
                     </div>
                   )}
+                  {getKeyMetric(training) && (
+                    <div className="detail-item">
+                      <strong>{getKeyMetric(training).label}</strong>  {getKeyMetric(training).value}
+                    </div>
+                  )}
+                  {getEstimatedRemaining(training) != null && (
+                    <div className="detail-item">
+                      <strong>Осталось:</strong> {formatDuration(getEstimatedRemaining(training))}
+                    </div>
+                  )}
                   <div className="detail-item time-info">
                     <span>Запущено: {training.startedAt.toLocaleTimeString()}</span>
                   </div>
                 </div>
+                {metricsPanelOpen[training.taskId] && metricsData[training.taskId] && (
+                  <div className="metrics-panel-container">
+                    {renderMetricsPanel(training, metricsData[training.taskId])}
+                  </div>
+                )}
               </div>
             ))}
           </div>

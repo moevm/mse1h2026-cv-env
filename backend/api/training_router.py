@@ -4,11 +4,15 @@ from typing import Dict
 from schemas.training_schema import TrainingParamsSchema, TrainingRequestSchema
 from services.training_config import load_training_config, save_training_config
 from services.training_service import (
+    pause_training,
     start_training_async,
     get_training_status,
     get_training_logs,
     stop_training,
-    validate_model_name
+    validate_model_name,
+    get_training_metrics,
+    resume_training,
+    pause_training
 )
 
 
@@ -223,3 +227,31 @@ async def websocket_endpoint(websocket: WebSocket, task_id: str):
         finally:
             manager.disconnect(websocket, task_id)
             print(f"[WS] Connection cleaned up for task {task_id}")
+
+@router.get("/metrics/{task_id}")
+async def training_metrics(task_id: str):
+    """
+    Возвращает метрики обучения (история по эпохам, последние, лучшие).
+    """
+    try:
+        metrics = get_training_metrics(task_id)
+        if metrics is None:
+            raise HTTPException(status_code=404, detail="Task not found or no metrics yet")
+        return metrics
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
+@router.post("/pause/{task_id}")
+async def pause_training_endpoint(task_id: str):
+    result = pause_training(task_id)
+    if not result:
+        raise HTTPException(status_code=400, detail="Не удалось поставить обучение на паузу")
+    return {"status": "success", "message": "Обучение приостановлено"}
+
+@router.post("/resume/{task_id}")
+async def resume_training_endpoint(task_id: str):
+    result = resume_training(task_id)
+    if not result:
+        raise HTTPException(status_code=400, detail="Не удалось возобновить обучение")
+    return {"status": "success", "task_id": task_id, "message": "Обучение возобновлено"}

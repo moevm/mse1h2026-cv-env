@@ -13,7 +13,7 @@ class TrainingParamsSchema(BaseModel):
     workers: int = Field(8, ge=0, le=32)
     patience: int = Field(50, ge=0)
     save: bool = True
-    save_period: int = Field(-1, ge=-1)
+    save_period: int = Field(1, ge=-1)
     cache: bool = False
     optimizer: str = Field("SGD")
     lr0: float = Field(0.01, ge=0, le=1)
@@ -46,6 +46,7 @@ class TrainingStatusSchema(BaseModel):
     current_epoch: int = 0
     total_epochs: int = 0
     loss: Optional[float] = None
+    metrics_history: List[dict] = Field(default_factory=list)
     error: Optional[str] = None
     started_at: datetime
     updated_at: datetime

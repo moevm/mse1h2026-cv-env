@@ -10,6 +10,8 @@ from ultralytics import YOLO
 from core.paths import get_project_paths
 from schemas.training_schema import TrainingRequestSchema, TrainingStatusSchema
 import torch
+from services.exceptions import PauseTrainingException, StopTrainingException
+from services.logger import add_training_log, get_training_logs
 
 
 training_tasks: Dict[str, TrainingStatusSchema] = {}
@@ -17,6 +19,9 @@ training_models: Dict[str, YOLO] = {}
 training_logs: Dict[str, List[str]] = {}
 training_events: Dict[str, threading.Event] = {}
 training_threads: Dict[str, threading.Thread] = {}
+training_exp_dirs: Dict[str, str] = {} 
+training_requests: Dict[str, TrainingRequestSchema] = {}
+training_pause_events: Dict[str, threading.Event] = {}
 
 
 class TrainingCallback:
@@ -29,36 +34,51 @@ class TrainingCallback:
         self.total_epochs = 0
         self.last_epoch = -1
         self.last_log_time = 0
-    
     def on_train_epoch_start(self, trainer):
-        """Вызывается в начале эпохи"""
         try:
             if self.stop_event.is_set():
                 trainer.stop_training = True
-                return
+                raise StopTrainingException("Training stopped by user")
+            
+            pause_event = training_pause_events.get(self.task_id)
+            if pause_event and pause_event.is_set():
+                raise PauseTrainingException("Training paused by user")
             
             self.current_epoch = trainer.epoch + 1
             self.total_epochs = trainer.epochs
-            
             self._update_status(trainer)
-            
         except Exception as e:
-            print(f"[ERROR] Callback error at epoch start for task {self.task_id}: {e}")
-    
-    def on_train_epoch_end(self, trainer):
-        """Вызывается в конце каждой эпохи - для финального обновления"""
+            if not isinstance(e, (PauseTrainingException, StopTrainingException)):
+                print(f"[ERROR] Callback error for task {self.task_id}: {e}")
+            raise
+    def on_train_batch_end(self, trainer):
         try:
             if self.stop_event.is_set():
                 trainer.stop_training = True
-                return
+                raise StopTrainingException("Training stopped by user")
+            pause_event = training_pause_events.get(self.task_id)
+            if pause_event and pause_event.is_set():
+                raise PauseTrainingException("Training paused by user")
+        except Exception as e:
+            if not isinstance(e, (PauseTrainingException, StopTrainingException)):
+                print(f"[ERROR] Callback error for task {self.task_id}: {e}")
+            raise
+    def on_train_epoch_end(self, trainer):
+        try:
+            if self.stop_event.is_set():
+                trainer.stop_training = True
+                raise StopTrainingException("Training stopped by user")
+            pause_event = training_pause_events.get(self.task_id)
+            if pause_event and pause_event.is_set():
+                raise PauseTrainingException("Training paused by user")
             
             self.current_epoch = trainer.epoch
             self.total_epochs = trainer.epochs
-            
             self._update_status(trainer)
-            
         except Exception as e:
-            print(f"[ERROR] Callback error for task {self.task_id}: {e}")
+            if not isinstance(e, (PauseTrainingException, StopTrainingException)):
+                print(f"[ERROR] Callback error for task {self.task_id}: {e}")
+            raise
     
     def _update_status(self, trainer):
         """Обновляет статус обучения"""
@@ -94,19 +114,6 @@ class TrainingCallback:
             
             self.last_epoch = self.current_epoch
 
-
-def add_training_log(task_id: str, message: str):
-    """Добавляет лог в хранилище"""
-    timestamp = datetime.now().strftime("%H:%M:%S")
-    log_entry = f"[{timestamp}] {message}"
-    
-    if task_id not in training_logs:
-        training_logs[task_id] = []
-    
-    training_logs[task_id].append(log_entry)
-    
-    if len(training_logs[task_id]) > 1000:
-        training_logs[task_id] = training_logs[task_id][-500:]
 
 
 def validate_model_name(model_name: str) -> Dict:
@@ -185,7 +192,7 @@ def run_dummy_training(task_id: str, request: TrainingRequestSchema):
         training_tasks[task_id].updated_at = datetime.now()
 
 
-def run_real_training(task_id: str, request: TrainingRequestSchema):
+def run_real_training(task_id: str, request: TrainingRequestSchema, resume_flag: bool = False):
     """Реальное обучение YOLO"""
     stop_event = training_events.get(task_id)
     
@@ -200,6 +207,8 @@ def run_real_training(task_id: str, request: TrainingRequestSchema):
         
         exp_dir = os.path.join(training_dir, task_id)
         os.makedirs(exp_dir, exist_ok=True)
+        training_exp_dirs[task_id] = exp_dir
+
 
         use_coco8 = getattr(request.dataset, 'use_coco8', False)
 
@@ -249,7 +258,16 @@ def run_real_training(task_id: str, request: TrainingRequestSchema):
         
         add_training_log(task_id, f"Загрузка модели {request.model}...")
         
-        model = YOLO(request.model)
+        if resume_flag:
+            last_pt_path = os.path.join(exp_dir, "weights", "last.pt")
+            if os.path.exists(last_pt_path):
+                model = YOLO(last_pt_path)
+                add_training_log(task_id, f"Возобновление обучения с сохраненной модели {last_pt_path}")
+            else:
+                raise ValueError(f"Файл last.pt не найден для возобновления обучения: {last_pt_path}")
+        else:
+            model = YOLO(request.model)
+        
         training_models[task_id] = model
         
         device = request.device
@@ -262,6 +280,7 @@ def run_real_training(task_id: str, request: TrainingRequestSchema):
         
         try:
             model.add_callback("on_train_epoch_start", callback.on_train_epoch_start)
+            model.add_callback("on_train_batch_end", callback.on_train_batch_end)
             model.add_callback("on_train_epoch_end", callback.on_train_epoch_end)
             add_training_log(task_id, "Callback успешно зарегистрирован")
             print(f"[DEBUG] Registered callbacks for task {task_id}")
@@ -289,6 +308,8 @@ def run_real_training(task_id: str, request: TrainingRequestSchema):
             'warmup_epochs': request.warmup_epochs,
             'warmup_momentum': request.warmup_momentum,
             'warmup_bias_lr': request.warmup_bias_lr,
+            'resume': resume_flag,
+            'save_period': request.save_period if request.save_period > 0 else 1,
             'project': training_dir,
             'name': task_id,
             'exist_ok': True,
@@ -318,6 +339,14 @@ def run_real_training(task_id: str, request: TrainingRequestSchema):
         print(f"[DEBUG] Total epochs: {request.epochs}")
         
         results = model.train(**train_params)
+        if stop_event and stop_event.is_set():
+            task = training_tasks[task_id]
+            if task.status != "paused":   # если пауза уже установлена callback'ом
+                task.status = "stopped"
+            task.updated_at = datetime.now()
+            add_training_log(task_id, "Обучение остановлено")
+        elif training_tasks[task_id].status == "running":
+            training_tasks[task_id].status = "completed"
 
         print(f"[DEBUG] Training finished for task {task_id}")
         print(f"[DEBUG] Results: {results}")
@@ -348,7 +377,20 @@ def run_real_training(task_id: str, request: TrainingRequestSchema):
         else:
             add_training_log(task_id, "Обучение завершилось с ошибкой")
             training_tasks[task_id].status = "failed"
-            
+    except StopTrainingException:
+        add_training_log(task_id, "Обучение остановлено пользователем")
+        task = training_tasks.get(task_id)
+        if task:
+            task.status = "stopped"
+            task.updated_at = datetime.now()
+
+    except PauseTrainingException:
+        add_training_log(task_id, "Обучение приостановлено пользователем")
+        task = training_tasks.get(task_id)
+        if task:
+            task.status = "paused"
+            task.updated_at = datetime.now()
+
     except Exception as e:
         error_msg = f"Ошибка обучения: {str(e)}"
         add_training_log(task_id, error_msg)
@@ -364,8 +406,8 @@ def run_real_training(task_id: str, request: TrainingRequestSchema):
                 f.write(str(e))
     
     finally:
-        if task_id in training_models:
-            del training_models[task_id]
+        _save_dataset_version_with_weights(exp_dir, request)
+
         add_training_log(task_id, "Очистка ресурсов завершена")
 
 
@@ -436,6 +478,7 @@ def start_training_async(request: TrainingRequestSchema) -> str:
         updated_at=datetime.now()
     )
     
+    training_requests[task_id] = request
     training_logs[task_id] = []
     add_training_log(task_id, f"Задача создана, ID: {task_id}")
     
@@ -467,8 +510,18 @@ def stop_training(task_id: str) -> bool:
     
     if task_id in training_events:
         training_events[task_id].set()
+        if task_id in training_pause_events:
+            del training_pause_events[task_id]
         add_training_log(task_id, "Получена команда остановки обучения")
         training_tasks[task_id].status = "stopping"
+        training_tasks[task_id].updated_at = datetime.now()
+        return True
+    
+    if status in ["paused", "pausing"]:
+        if task_id in training_pause_events:
+            del training_pause_events[task_id]
+        add_training_log(task_id, "Обучение принудительно завершено")
+        training_tasks[task_id].status = "stopped"
         training_tasks[task_id].updated_at = datetime.now()
         return True
     
@@ -480,12 +533,6 @@ def get_training_status(task_id: str) -> Optional[TrainingStatusSchema]:
     return training_tasks.get(task_id)
 
 
-def get_training_logs(task_id: str, limit: int = 100) -> List[str]:
-    """Возвращает последние логи"""
-    logs = training_logs.get(task_id, [])
-    if limit > 0:
-        return logs[-limit:]
-    return logs
 
 
 def stop_all_trainings():
@@ -499,3 +546,177 @@ def stop_all_trainings():
     
     training_events.clear()
     training_threads.clear()
+
+
+def get_training_metrics(task_id: str) -> dict:
+    """Возвращает историю метрик из results.csv эксперимента"""
+    exp_dir = training_exp_dirs.get(task_id)
+    if not exp_dir:
+        return {"history": [], "latest": None, "best": None}
+    
+    csv_path = os.path.join(exp_dir, "results.csv")
+    if not os.path.exists(csv_path):
+        return {"history": [], "latest": None, "best": None}
+    
+    import csv
+    rows = []
+    with open(csv_path, 'r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        fieldnames = reader.fieldnames 
+        for row in reader:
+            rows.append(row)
+    
+    history = []
+    best_map50 = 0.0
+    best_epoch = 0
+    
+    for row in rows:
+        epoch = int(row.get('epoch', 0))
+        
+        # Все метрики
+        metrics = {
+            "epoch": epoch,
+            "train/box_loss": _safe_float(row.get('train/box_loss')),
+            "train/cls_loss": _safe_float(row.get('train/cls_loss')),
+            "train/dfl_loss": _safe_float(row.get('train/dfl_loss')),
+            "val/box_loss": _safe_float(row.get('val/box_loss')),
+            "val/cls_loss": _safe_float(row.get('val/cls_loss')),
+            "val/dfl_loss": _safe_float(row.get('val/dfl_loss')),
+            "precision": _safe_float(row.get('metrics/precision(B)')),
+            "recall": _safe_float(row.get('metrics/recall(B)')),
+            "mAP50": _safe_float(row.get('metrics/mAP50(B)')),
+            "mAP50-95": _safe_float(row.get('metrics/mAP50-95(B)')),
+            "lr": _safe_float(row.get('lr/pg0')),
+        }
+        
+        history.append(metrics)
+        
+        if metrics["mAP50"] and metrics["mAP50"] > best_map50:
+            best_map50 = metrics["mAP50"]
+            best_epoch = epoch
+    
+    latest = history[-1] if history else None
+    
+    # Вычисляем F1 из Precision и Recall
+    f1 = None
+    if latest and latest["precision"] and latest["recall"] and (latest["precision"] + latest["recall"]) > 0:
+        f1 = 2 * (latest["precision"] * latest["recall"]) / (latest["precision"] + latest["recall"])
+    
+    return {
+        "history": history,
+        "latest": {**latest, "f1": f1} if latest else None,
+        "best": {"mAP50": best_map50, "epoch": best_epoch} if best_epoch else None,
+        "fieldnames": fieldnames
+    }
+
+def _safe_float(value):
+    """Безопасное преобразование в float"""
+    if value is None or value == '':
+        return None
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return None
+    
+def resume_training(task_id: str) -> bool:
+    print(f"[RESUME] Called for {task_id}")
+    if task_id not in training_tasks:
+        print("[RESUME] Task not found")
+        return False
+    status = training_tasks[task_id].status
+    print(f"[RESUME] Current status: {status}")
+    if status not in ["stopped", "failed", "paused"]:
+        print("[RESUME] Invalid status")
+        return False
+    
+    print("[RESUME] Clearing pause/stop events")
+    if task_id in training_pause_events:
+        del training_pause_events[task_id]
+    if task_id in training_events:
+        del training_events[task_id]
+    
+    exp_dir = training_exp_dirs.get(task_id)
+    print(f"[RESUME] exp_dir = {exp_dir}")
+    if not exp_dir:
+        print("[RESUME] No exp_dir")
+        return False
+    
+    last_pt = os.path.join(exp_dir, "weights", "last.pt")
+    print(f"[RESUME] last_pt = {last_pt}, exists = {os.path.exists(last_pt)}")
+    if not os.path.exists(last_pt):
+        print("[RESUME] last.pt not found")
+        return False
+    
+    request = training_requests.get(task_id)
+    print(f"[RESUME] request = {request is not None}")
+    if not request:
+        print("[RESUME] No request")
+        return False
+    
+    # Удаляем старый stop_event, если есть (он уже сработал)
+    if task_id in training_events:
+        del training_events[task_id]
+    
+    stop_event = threading.Event()
+    training_events[task_id] = stop_event
+    
+    # Обновляем статус
+    training_tasks[task_id].status = "pending"
+    training_tasks[task_id].error = None
+    training_tasks[task_id].updated_at = datetime.now()
+    
+    thread = threading.Thread(
+        target=run_real_training,
+        args=(task_id, request, True), 
+        daemon=True
+    )
+    thread.start()
+    training_threads[task_id] = thread
+    return True
+
+def pause_training(task_id: str) -> bool:
+    if task_id not in training_tasks:
+        return False
+    task = training_tasks[task_id]
+    if task.status != "running":
+        return False
+    
+    pause_event = threading.Event()
+    training_pause_events[task_id] = pause_event
+    pause_event.set()
+    add_training_log(task_id, "Получена команда паузы обучения")
+    task.status = "pausing"
+    task.updated_at = datetime.now()
+    return True
+
+def _save_dataset_version_with_weights(exp_dir: str, request: TrainingRequestSchema, task_id: str = None):
+    if not exp_dir or not os.path.exists(exp_dir):
+        return
+
+    dataset = request.dataset
+    
+    # Проверяем, есть ли веса
+    best_exists = os.path.exists(os.path.join(exp_dir, "weights", "best.pt"))
+    last_exists = os.path.exists(os.path.join(exp_dir, "weights", "last.pt"))
+    
+    weights_info = {}
+    if best_exists:
+        weights_info["best"] = "weights/best.pt"
+    if last_exists:
+        weights_info["last"] = "weights/last.pt"
+
+    version_info = {
+        "dataset_id": dataset.id,
+        "dataset_name": dataset.name,
+        "version_id": dataset.versionId,
+        "version_name": dataset.versionName,
+        "active_folders": dataset.active_folders,
+        "classes": dataset.classes,
+        "use_coco8": dataset.use_coco8,
+        "model_weights": weights_info,  # просто ссылки, без хэшей
+        "trained_at": datetime.now().isoformat()
+    }
+    
+    version_path = os.path.join(exp_dir, "dataset_version.yaml")
+    with open(version_path, "w", encoding="utf-8") as f:
+        yaml.dump(version_info, f, allow_unicode=True, default_flow_style=False)
