@@ -32,7 +32,23 @@ const useAnnotations = (workspacePath, projectClasses = []) => {
     } else {
       setIsReady(true);
     }
-  }, [workspacePath]); // Выполняем только один раз при смене рабочей папки
+  }, [workspacePath]);
+
+  // Подхватываем новые классы из projectClasses (например после импорта датасета)
+  // без сброса классов добавленных пользователем вручную
+  useEffect(() => {
+    if (!projectClasses || projectClasses.length === 0) return;
+    setClasses(prev => {
+      const existingNames = new Set(prev.map(c => c.name.trim().toLowerCase()));
+      const incoming = projectClasses.map((cls, index) =>
+        typeof cls === "string"
+          ? { id: crypto.randomUUID(), name: cls, color: DEFAULT_COLORS[index % DEFAULT_COLORS.length] }
+          : cls
+      );
+      const newOnes = incoming.filter(c => !existingNames.has(c.name.trim().toLowerCase()));
+      return newOnes.length > 0 ? [...prev, ...newOnes] : prev;
+    });
+  }, [projectClasses]);
 
   const setInitialAnnotations = (imageId, loadedAnns) => {
     setOpenedImages(prev => new Set(prev).add(imageId));
