@@ -98,9 +98,7 @@ function App() {
       if (!absolutePath) return;
       if (_isDuplicateFolder(absolutePath)) { alert("Эта папка уже добавлена в проект!"); return; }
 
-      const intervalStr = window.prompt("Каждый N-й кадр извлекать (например, 30 = каждый 30-й):", "30");
-      if (intervalStr === null) return;
-      const frameInterval = Math.max(1, parseInt(intervalStr, 10) || 30);
+      const frameInterval = 1;
 
       const folderName = absolutePath.split(/[\\/]/).pop();
       const uniqueRootPath = `src_${Date.now()}_${folderName}`;
