@@ -26,6 +26,7 @@ def _extract_frames(
     output_dir: Path,
     frame_interval: int,
     max_frames: int | None,
+    video_stem: str = "frame",
 ) -> list[dict]:
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -45,7 +46,7 @@ def _extract_frames(
                 if max_frames is not None and saved_index >= max_frames:
                     break
 
-                filename = f"frame_{saved_index:06d}.jpg"
+                filename = f"{video_stem}_{saved_index:06d}.jpg"
                 out_path = output_dir / filename
                 cv2.imwrite(str(out_path), frame)
                 frames.append({"frame_number": frame_index, "path": str(out_path.resolve())})
@@ -97,7 +98,7 @@ async def scan_video_folder(
 
         try:
             frames = await asyncio.to_thread(
-                _extract_frames, str(video_path), video_dir, frame_interval, None
+                _extract_frames, str(video_path), video_dir, frame_interval, None, video_stem
             )
         except Exception:
             shutil.rmtree(video_dir, ignore_errors=True)
@@ -162,7 +163,7 @@ async def extract_frames(
         with open(tmp_path, "wb") as f:
             f.write(content)
 
-        frames = _extract_frames(tmp_path, output_dir, frame_interval, max_frames)
+        frames = _extract_frames(tmp_path, output_dir, frame_interval, max_frames, video_stem)
     except ValueError as exc:
         shutil.rmtree(output_dir, ignore_errors=True)
         raise HTTPException(status_code=422, detail=str(exc)) from exc
