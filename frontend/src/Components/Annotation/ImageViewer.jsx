@@ -105,11 +105,12 @@ function ImageViewer({ image, collection, onClose, onNext, onPrev, hasNext, hasP
             imageId={image.uuid || image.relativePath || image.id}
             imageName={image.name || image.originalName}
             imageAbsPath={image.absolutePath || image.file?.absolute_path}
+            imageRelativePath={image.relativePath}
             datasetName={collection?.name}
             workspacePath={collection?.workspacePath}
             onClose={onClose}
             annotationsManager={annotationsManager}
-            onSaveAnnotation={onSaveAnnotation} // <--- ДОБАВЛЯЕМ ЭТУ СТРОКУ
+            onSaveAnnotation={onSaveAnnotation}
           />
         )}
       </div>

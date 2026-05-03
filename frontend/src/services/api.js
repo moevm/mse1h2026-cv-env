@@ -205,11 +205,12 @@ export const deleteStoredDataset = async (workspacePath) => {
 };
 
 // Annotations (Прямое автосохранение)
-export const autosaveAnnotation = async (imageAbsPath, annotationContent, classes = [], workspacePath) => {
+export const autosaveAnnotation = async (imageAbsPath, annotationContent, classes = [], workspacePath, relativePath = "") => {
   const res = await fetch(`${API_BASE_URL}/api/datasets/autosave`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       image_abs_path: imageAbsPath,
+      relative_path: relativePath,
       content: annotationContent,
       classes: classes,
       workspace_path: workspacePath,
@@ -218,10 +219,26 @@ export const autosaveAnnotation = async (imageAbsPath, annotationContent, classe
   return await res.json();
 };
 
+export const getAllAnnotations = async (workspacePath) => {
+  if (!workspacePath) return {};
+  const res = await fetch(`${API_BASE_URL}/api/datasets/all-annotations${buildQuery(workspacePath)}`);
+  if (!res.ok) return {};
+  const data = await res.json();
+  return data.annotations || {};
+};
+
 export async function loadWorkspaceClasses(workspacePath) {
   const response = await fetch(`${API_BASE_URL}/api/datasets/workspace-classes?workspace_path=${encodeURIComponent(workspacePath)}`);
   return await response.json();
 }
+
+export const getAutosaveAnnotations = async (workspacePath) => {
+  if (!workspacePath) return {};
+  const res = await fetch(`${API_BASE_URL}/api/datasets/autosave${buildQuery(workspacePath)}`);
+  if (!res.ok) return {};
+  const data = await res.json();
+  return data.annotations || {};
+};
 
 // ----- Experiments API -----
 export const getExperiments = async (workspacePath, sortBy = 'map50', order = 'desc') => {

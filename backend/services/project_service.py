@@ -138,14 +138,13 @@ def load_project_workspace(workspace_path: str) -> Dict:
                                     orig_path = info.get("original_path", "")
                                     
                                     if orig_path:
-                                        key_orig = os.path.splitext(orig_path)[0].replace("\\", "/").lower()
-                                        key_base = key_orig.split("/")[-1] # Имя файла без пути
-                                        
-                                        # Сохраняем разметку по всем возможным ключам для фронта
-                                        annotated_images[key_orig] = content
-                                        annotated_images[key_base] = content
-                                        
-                                    annotated_images[stem] = content
+                                        orig = Path(orig_path)
+                                        if orig.is_absolute():
+                                            # Old flat-mode: absolute path stored — use stem as fallback
+                                            annotated_images[orig.stem.lower()] = content
+                                        else:
+                                            key_orig = orig.with_suffix("").as_posix().lower()
+                                            annotated_images[key_orig] = content
                         except Exception:
                             pass
                             

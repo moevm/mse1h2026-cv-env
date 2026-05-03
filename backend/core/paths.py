@@ -17,6 +17,7 @@ def get_project_paths(workspace_path: str = None):
         "training": os.path.join(storage, "training"),
         "experiments": os.path.join(storage, "experiments"),
         "frames": os.path.join(storage, "frames"),
+        "autosave": os.path.join(storage, "autosave"),
     }
 
 def ensure_project_directories(workspace_path: str):

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { serializeFolders } from "../utils/fileSystem";
 import { saveCollections, loadCollections } from "../utils/persistence";
-import { deleteStoredDataset, getStoredDatasets, updateProjectOnBackend, scanFolderOnBackend, scanVideoFolderOnBackend, scanDatasetFolderOnBackend, getImageUrl } from "../services/api";
+import { deleteStoredDataset, getStoredDatasets, updateProjectOnBackend, scanFolderOnBackend, scanVideoFolderOnBackend, scanDatasetFolderOnBackend, getAllAnnotations, getImageUrl } from "../services/api";
 
 const DEFAULT_TRAIN_SPLIT_PERCENT = 80;
 const DEFAULT_VAL_SPLIT_PERCENT = 10;
@@ -27,9 +27,10 @@ function buildImagesWithAnnotations(files, loadedAnnotations = {}) {
 
   return imageFiles.map((file) => {
     const stemKey = file.relativePath.replace(/\\/g, "/").replace(/\.[^.]+$/u, "").toLowerCase();
-    const baseNameKey = stemKey.split("/").pop(); // Извлекаем чистый stem (без папок)
-    
-    const annotationTextFromBackend = loadedAnnotations[stemKey] || loadedAnnotations[baseNameKey] || null;
+    // shortKey — путь без виртуального корня (первого компонента src_timestamp_name)
+    const shortKey = stemKey.split("/").slice(1).join("/");
+
+    const annotationTextFromBackend = loadedAnnotations[stemKey] || loadedAnnotations[shortKey] || null;
     // Для датасетов и видео аннотации приходят прямо в объекте файла
     const annotationText = annotationTextFromBackend ?? file.annotationText ?? null;
 
@@ -144,8 +145,11 @@ function useCollections() {
       updatedFolders.push({ ...folderNode, children: mergedChildren });
     }
 
-    const images = buildImagesWithAnnotations(allUpdatedFiles, collection.loadedAnnotations || {});
-    setCollections((prev) => prev.map((c) => c.id === collectionId ? { ...c, images, imageCount: images.length, folders: updatedFolders } : c));
+    const allAnnotations = collection.workspacePath
+      ? await getAllAnnotations(collection.workspacePath)
+      : {};
+    const images = buildImagesWithAnnotations(allUpdatedFiles, allAnnotations);
+    setCollections((prev) => prev.map((c) => c.id === collectionId ? { ...c, images, imageCount: images.length, folders: updatedFolders, loadedAnnotations: allAnnotations } : c));
   };
 
   const debounceSync = useCallback((collection) => {
