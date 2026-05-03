@@ -76,17 +76,22 @@ async def scan_video_folder(
 
     folder_key = _sanitize_name(Path(path).name)
     scan_dir = frames_root / folder_key
-    if scan_dir.exists():
-        shutil.rmtree(scan_dir)
-    scan_dir.mkdir(parents=True)
+    scan_dir.mkdir(parents=True, exist_ok=True)
 
     video_files = sorted(
         entry for entry in Path(path).rglob("*")
         if entry.is_file() and entry.suffix.lower() in VIDEO_EXTENSIONS
     )
 
-    if not video_files:
+    if not video_files and not scan_dir.exists():
         raise HTTPException(status_code=404, detail="Видеофайлы не найдены в папке")
+
+    current_stems = {_sanitize_name(v.stem) for v in video_files}
+
+    # Удаляем кадры видео, которые больше не существуют в исходной папке
+    for existing_dir in list(scan_dir.iterdir()):
+        if existing_dir.is_dir() and existing_dir.name not in current_stems:
+            shutil.rmtree(existing_dir, ignore_errors=True)
 
     all_files = []
     tree_children = []
@@ -94,15 +99,19 @@ async def scan_video_folder(
     for video_path in video_files:
         video_stem = _sanitize_name(video_path.stem)
         video_dir = scan_dir / video_stem
-        video_dir.mkdir(parents=True, exist_ok=True)
 
-        try:
-            frames = await asyncio.to_thread(
-                _extract_frames, str(video_path), video_dir, frame_interval, None, video_stem
-            )
-        except Exception:
-            shutil.rmtree(video_dir, ignore_errors=True)
-            continue
+        # Если кадры уже извлечены — не извлекаем повторно
+        if video_dir.exists() and any(video_dir.glob("*.jpg")):
+            frames = [{"frame_number": i, "path": str(f)} for i, f in enumerate(sorted(video_dir.glob("*.jpg")))]
+        else:
+            video_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                frames = await asyncio.to_thread(
+                    _extract_frames, str(video_path), video_dir, frame_interval, None, video_stem
+                )
+            except Exception:
+                shutil.rmtree(video_dir, ignore_errors=True)
+                continue
 
         for frame in frames:
             frame_path = Path(frame["path"])

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { serializeFolders } from "../utils/fileSystem";
 import { saveCollections, loadCollections } from "../utils/persistence";
-import { deleteStoredDataset, getStoredDatasets, updateProjectOnBackend, scanFolderOnBackend, scanDatasetFolderOnBackend, getImageUrl } from "../services/api";
+import { deleteStoredDataset, getStoredDatasets, updateProjectOnBackend, scanFolderOnBackend, scanVideoFolderOnBackend, scanDatasetFolderOnBackend, getImageUrl } from "../services/api";
 
 const DEFAULT_TRAIN_SPLIT_PERCENT = 80;
 const DEFAULT_VAL_SPLIT_PERCENT = 10;
@@ -132,8 +132,8 @@ function useCollections() {
         continue;
       }
       let scanResult;
-      if (folderNode.folderType === "videos" && folderNode.framesDir) {
-        scanResult = await scanFolderOnBackend(folderNode.framesDir, folderNode.path);
+      if (folderNode.folderType === "videos" && folderNode.absolutePath) {
+        scanResult = await scanVideoFolderOnBackend(folderNode.absolutePath, folderNode.path, collection.workspacePath || "", 1);
       } else if (folderNode.folderType === "dataset") {
         scanResult = await scanDatasetFolderOnBackend(folderNode.absolutePath, folderNode.path);
       } else {
@@ -184,8 +184,8 @@ function useCollections() {
         }
         try {
           let scanResult;
-          if (folderNode.folderType === "videos" && folderNode.framesDir) {
-            scanResult = await scanFolderOnBackend(folderNode.framesDir, folderNode.path);
+          if (folderNode.folderType === "videos" && folderNode.absolutePath) {
+            scanResult = await scanVideoFolderOnBackend(folderNode.absolutePath, folderNode.path, config.path || "", 1);
           } else if (folderNode.folderType === "dataset") {
             scanResult = await scanDatasetFolderOnBackend(folderNode.absolutePath, folderNode.path);
           } else {
