@@ -132,7 +132,13 @@ function App() {
 
       const rootNode = { name: folderName, path: uniqueRootPath, absolutePath, isEnabled: true, folderType: "dataset", children: scanResult.tree };
       const updatedFolders = [...(currentCollection.folders || []), rootNode];
-      updateCollection(currentCollectionId, { folders: updatedFolders });
+      const updates = { folders: updatedFolders };
+      if (scanResult.classes && scanResult.classes.length > 0) {
+        const existing = currentCollection.projectClasses || [];
+        const merged = [...new Set([...existing, ...scanResult.classes])];
+        updates.projectClasses = merged;
+      }
+      updateCollection(currentCollectionId, updates);
       await syncCollection(currentCollectionId, updatedFolders);
     } catch (error) {
       alert("Ошибка импорта датасета: " + error.message);

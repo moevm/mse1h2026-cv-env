@@ -216,11 +216,35 @@ def scan_dataset_structure(root_path: str, virtual_root_name: str) -> Dict:
             "children": [],
         })
 
+    classes = []
+    for yaml_name in ("dataset.yaml", "data.yaml"):
+        yaml_path = root / yaml_name
+        if yaml_path.exists():
+            try:
+                with open(yaml_path, encoding="utf-8") as f:
+                    data = yaml.safe_load(f)
+                names = data.get("names", [])
+                if isinstance(names, list):
+                    classes = names
+                elif isinstance(names, dict):
+                    classes = [names[k] for k in sorted(names)]
+            except Exception:
+                pass
+            break
+    if not classes:
+        classes_txt = root / "classes.txt"
+        if classes_txt.exists():
+            try:
+                classes = [l.strip() for l in classes_txt.read_text(encoding="utf-8").splitlines() if l.strip()]
+            except Exception:
+                pass
+
     return {
         "files": files_list,
         "tree": tree,
         "absolute_root": root_path,
         "virtual_root": virtual_root_name,
+        "classes": classes,
     }
 
 
