@@ -1,5 +1,17 @@
 from pydantic import BaseModel, Field
 
+
+class SaveAugVersionPayload(BaseModel):
+    workspace_path: str = ""
+    name: str
+    params: dict
+
+
+class SwitchAugVersionPayload(BaseModel):
+    workspace_path: str = ""
+    version_id: str
+
+
 class AugmentationSchema(BaseModel):
     # Цветовые (HSV)
     hsv_h: float = Field(0.015, ge=0, le=1)
