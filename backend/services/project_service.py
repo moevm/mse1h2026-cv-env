@@ -3,6 +3,7 @@ import yaml
 import datetime
 import tkinter as tk
 from tkinter import filedialog
+from pathlib import Path
 from typing import Dict
 import json
 
@@ -137,14 +138,13 @@ def load_project_workspace(workspace_path: str) -> Dict:
                                     orig_path = info.get("original_path", "")
                                     
                                     if orig_path:
-                                        key_orig = os.path.splitext(orig_path)[0].replace("\\", "/").lower()
-                                        key_base = key_orig.split("/")[-1] # Имя файла без пути
-                                        
-                                        # Сохраняем разметку по всем возможным ключам для фронта
-                                        annotated_images[key_orig] = content
-                                        annotated_images[key_base] = content
-                                        
-                                    annotated_images[stem] = content
+                                        orig = Path(orig_path)
+                                        if orig.is_absolute():
+                                            # Old flat-mode: absolute path stored — use stem as fallback
+                                            annotated_images[orig.stem.lower()] = content
+                                        else:
+                                            key_orig = orig.with_suffix("").as_posix().lower()
+                                            annotated_images[key_orig] = content
                         except Exception:
                             pass
                             
@@ -152,6 +152,100 @@ def load_project_workspace(workspace_path: str) -> Dict:
         "config": config,
         "annotated_images": annotated_images
     }
+
+IMAGE_EXTENSIONS_SET = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff"}
+
+
+def scan_dataset_structure(root_path: str, virtual_root_name: str) -> Dict:
+    root = Path(root_path)
+    if not root.exists():
+        raise ValueError(f"Папка '{root_path}' не найдена на диске")
+
+    files_list = []
+    splits = ["train", "val", "test"]
+    has_split_structure = any((root / s / "images").is_dir() for s in splits)
+
+    def read_annotation(label_path: Path) -> str:
+        try:
+            return label_path.read_text(encoding="utf-8").strip()
+        except Exception:
+            return ""
+
+    def collect_images(images_dir: Path, labels_dir: Path, split: str, virtual_prefix: str):
+        for img_path in sorted(images_dir.rglob("*")):
+            if not img_path.is_file() or img_path.suffix.lower() not in IMAGE_EXTENSIONS_SET:
+                continue
+            rel = img_path.relative_to(images_dir).as_posix()
+            label_path = (labels_dir / rel).with_suffix(".txt")
+            ext = img_path.suffix.lower().lstrip(".")
+            files_list.append({
+                "name": img_path.name,
+                "absolute_path": str(img_path),
+                "relativePath": f"{virtual_prefix}/{rel}",
+                "size": img_path.stat().st_size,
+                "type": f"image/{ext}",
+                "annotationText": read_annotation(label_path),
+                "split": split,
+            })
+
+    tree = []
+    if has_split_structure:
+        for split in splits:
+            images_dir = root / split / "images"
+            labels_dir = root / split / "labels"
+            if not images_dir.is_dir():
+                continue
+            collect_images(images_dir, labels_dir, split, f"{virtual_root_name}/{split}/images")
+            tree.append({
+                "name": split,
+                "path": f"{virtual_root_name}/{split}",
+                "absolute_path": str(root / split),
+                "isEnabled": True,
+                "children": [],
+            })
+    else:
+        images_dir = root / "images" if (root / "images").is_dir() else root
+        labels_dir = root / "labels" if (root / "labels").is_dir() else root
+        collect_images(images_dir, labels_dir, "train", f"{virtual_root_name}/images")
+        tree.append({
+            "name": "images",
+            "path": f"{virtual_root_name}/images",
+            "absolute_path": str(images_dir),
+            "isEnabled": True,
+            "children": [],
+        })
+
+    classes = []
+    for yaml_name in ("dataset.yaml", "data.yaml"):
+        yaml_path = root / yaml_name
+        if yaml_path.exists():
+            try:
+                with open(yaml_path, encoding="utf-8") as f:
+                    data = yaml.safe_load(f)
+                names = data.get("names", [])
+                if isinstance(names, list):
+                    classes = names
+                elif isinstance(names, dict):
+                    classes = [names[k] for k in sorted(names)]
+            except Exception:
+                pass
+            break
+    if not classes:
+        classes_txt = root / "classes.txt"
+        if classes_txt.exists():
+            try:
+                classes = [l.strip() for l in classes_txt.read_text(encoding="utf-8").splitlines() if l.strip()]
+            except Exception:
+                pass
+
+    return {
+        "files": files_list,
+        "tree": tree,
+        "absolute_root": root_path,
+        "virtual_root": virtual_root_name,
+        "classes": classes,
+    }
+
 
 def scan_folder_structure(root_path: str, virtual_root_name: str) -> Dict:
     if not os.path.exists(root_path):

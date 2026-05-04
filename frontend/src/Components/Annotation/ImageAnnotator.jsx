@@ -7,7 +7,7 @@ import { annotationToYoloLine } from "../../utils/yolo";
 import { autosaveAnnotation } from "../../services/api";
 import "../../styles/AnnotationView.css";
 
-function ImageAnnotator({ imageUrl, imageId, imageName, imageAbsPath, workspacePath, onClose, annotationsManager, onSaveAnnotation }) {
+function ImageAnnotator({ imageUrl, imageId, imageName, imageAbsPath, imageRelativePath, workspacePath, onClose, annotationsManager, onSaveAnnotation }) {
   const { annotations, classes, addAnnotation, addClass, updateAnnotation, deleteAnnotation, getClassColor } = annotationsManager;
 
   const [isDrawing, setIsDrawing] = useState(false);
@@ -27,9 +27,9 @@ function ImageAnnotator({ imageUrl, imageId, imageName, imageAbsPath, workspaceP
   const currentImageAnnotations = useMemo(() => annotations.filter((a) => a.imageId === imageId), [annotations, imageId]);
 
   // 1. Создаем хранилище для самых свежих данных (чтобы не пересоздавать таймер)
-  const latestProps = useRef({ classes, imageAbsPath, workspacePath, imageUrl, imageId, onSaveAnnotation });
+  const latestProps = useRef({ classes, imageAbsPath, imageRelativePath, workspacePath, imageUrl, imageId, onSaveAnnotation });
   useEffect(() => {
-    latestProps.current = { classes, imageAbsPath, workspacePath, imageUrl, imageId, onSaveAnnotation };
+    latestProps.current = { classes, imageAbsPath, imageRelativePath, workspacePath, imageUrl, imageId, onSaveAnnotation };
   });
 
   const isInitialMount = useRef(true);
@@ -61,7 +61,7 @@ function ImageAnnotator({ imageUrl, imageId, imageName, imageAbsPath, workspaceP
     const timer = setTimeout(async () => {
       try {
         // Достаем самые актуальные данные прямо перед сохранением
-        const { classes: latestClasses, imageAbsPath: latestPath, workspacePath: latestWs, imageUrl: latestUrl, imageId: latestId, onSaveAnnotation: latestOnSave } = latestProps.current;
+        const { classes: latestClasses, imageAbsPath: latestPath, imageRelativePath: latestRelPath, workspacePath: latestWs, imageUrl: latestUrl, imageId: latestId, onSaveAnnotation: latestOnSave } = latestProps.current;
         
         if (!latestPath || !latestWs) return;
 
@@ -82,7 +82,7 @@ function ImageAnnotator({ imageUrl, imageId, imageName, imageAbsPath, workspaceP
         }).filter(Boolean).join("\n");
 
         const allClassNames = latestClasses.map((c) => c.name);
-        await autosaveAnnotation(latestPath, yoloLines, allClassNames, latestWs);
+        await autosaveAnnotation(latestPath, yoloLines, allClassNames, latestWs, latestRelPath || "");
 
         if (latestOnSave) {
            latestOnSave(latestId, yoloLines);

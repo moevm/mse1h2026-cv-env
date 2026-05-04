@@ -13,6 +13,7 @@ class ExportPayload(BaseModel):
 
 class AutosavePayload(BaseModel):
     image_abs_path: str
+    relative_path: str = ""
     content: str
     workspace_path: str
     classes: list[str]

@@ -155,20 +155,71 @@ def _build_split_plan(items: list[dict[str, Any]], train_percent: int, val_perce
 
 @router.post("/autosave")
 async def autosave_annotation(payload: AutosavePayload):
-    if payload.image_abs_path and os.path.exists(payload.image_abs_path):
-        txt_path = Path(payload.image_abs_path).with_suffix(".txt")
+    if payload.image_abs_path and payload.workspace_path and os.path.exists(payload.workspace_path):
+        autosave_dir = Path(get_project_paths(payload.workspace_path)["autosave"])
+        if payload.relative_path:
+            rel = Path(payload.relative_path).with_suffix(".txt")
+            txt_path = autosave_dir / rel
+        else:
+            txt_path = autosave_dir / f"{Path(payload.image_abs_path).stem}.txt"
+        txt_path.parent.mkdir(parents=True, exist_ok=True)
         if payload.content.strip():
             txt_path.write_text(payload.content, encoding="utf-8")
-        else:
-            if txt_path.exists():
-                txt_path.unlink()
-                
+        elif txt_path.exists():
+            txt_path.unlink()
+
     if payload.workspace_path and os.path.exists(payload.workspace_path):
         classes_path = Path(payload.workspace_path) / "classes.txt"
         if payload.classes:
             classes_path.write_text("\n".join(payload.classes) + "\n", encoding="utf-8")
-        
+
     return {"status": "success"}
+
+
+@router.get("/all-annotations")
+def get_all_annotations(workspace_path: str = Query(...)):
+    result = {}
+    paths = get_project_paths(workspace_path)
+
+    # Сначала autosave (низкий приоритет)
+    autosave_dir = Path(paths["autosave"])
+    if autosave_dir.is_dir():
+        for txt_file in autosave_dir.rglob("*.txt"):
+            content = txt_file.read_text(encoding="utf-8").strip()
+            if content:
+                rel_key = txt_file.relative_to(autosave_dir).with_suffix("").as_posix().lower()
+                result[rel_key] = content
+
+    # Потом datasets (высокий приоритет — перезаписывает autosave)
+    datasets_dir = Path(paths["datasets"])
+    if datasets_dir.is_dir():
+        for ds_subdir in datasets_dir.iterdir():
+            if not ds_subdir.is_dir():
+                continue
+            mapping_file = ds_subdir / "uuid_mapping.json"
+            uuid_mapping = {}
+            if mapping_file.exists():
+                try:
+                    uuid_mapping = json.loads(mapping_file.read_text(encoding="utf-8"))
+                except Exception:
+                    pass
+            for label_file in ds_subdir.rglob("labels/*.txt"):
+                if label_file.name == "classes.txt":
+                    continue
+                content = label_file.read_text(encoding="utf-8").strip()
+                if not content:
+                    continue
+                info = uuid_mapping.get(label_file.stem, {})
+                orig_path = info.get("original_path", "")
+                if orig_path:
+                    orig = Path(orig_path)
+                    if orig.is_absolute():
+                        result[orig.stem.lower()] = content
+                    else:
+                        key_orig = orig.with_suffix("").as_posix().lower()
+                        result[key_orig] = content
+
+    return {"annotations": result}
 
 @router.delete("/clear")
 def delete_workspace_datasets(workspace_path: str = Query(None)):
@@ -245,7 +296,7 @@ async def export_dataset(payload: ExportPayload):
                 label_file.write(annotation_txt)
                 if annotation_txt: label_file.write("\n")
 
-            uuid_mapping[file_uuid] = {"original_path": item.get("normalizedRelativePath") or item.get("absolutePath"), "split": split_name}
+            uuid_mapping[file_uuid] = {"original_path": item.get("relativePath") or item.get("absolutePath"), "split": split_name}
             images_saved += 1
             split_counts[split_name] += 1
 

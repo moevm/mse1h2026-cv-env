@@ -169,16 +169,31 @@
   margin-top: -4px;
 }
 
+.add-source-label {
+  font-size: 0.75rem;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+
+.add-folders-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
 .add-folders-btn {
   background: none;
   border: 1px dashed #888;
   color: #ccc;
   width: 100%;
-  padding: 6px;
-  margin-bottom: 10px;
+  padding: 5px 8px;
   border-radius: 4px;
   cursor: pointer;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
+  text-align: left;
   transition: all 0.2s;
 }
 

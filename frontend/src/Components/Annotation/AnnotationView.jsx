@@ -177,7 +177,8 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
           if (image.annotationFile) {
             const filePath = image.annotationFile.absolute_path || image.annotationFile.absolutePath;
             if (filePath) {
-              existingTxt = await readTextFileSafe(filePath);
+              const fromFile = await readTextFileSafe(filePath);
+              existingTxt = fromFile || image.annotationText || "";
             }
           }
           finalYoloLines = existingTxt;

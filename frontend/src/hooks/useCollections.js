@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { serializeFolders } from "../utils/fileSystem";
 import { saveCollections, loadCollections } from "../utils/persistence";
-import { deleteStoredDataset, getStoredDatasets, updateProjectOnBackend, scanFolderOnBackend, getImageUrl } from "../services/api";
+import { deleteStoredDataset, getStoredDatasets, updateProjectOnBackend, scanFolderOnBackend, scanVideoFolderOnBackend, scanDatasetFolderOnBackend, getAllAnnotations, getImageUrl } from "../services/api";
 
 const DEFAULT_TRAIN_SPLIT_PERCENT = 80;
 const DEFAULT_VAL_SPLIT_PERCENT = 10;
@@ -27,9 +27,12 @@ function buildImagesWithAnnotations(files, loadedAnnotations = {}) {
 
   return imageFiles.map((file) => {
     const stemKey = file.relativePath.replace(/\\/g, "/").replace(/\.[^.]+$/u, "").toLowerCase();
-    const baseNameKey = stemKey.split("/").pop(); // Извлекаем чистый stem (без папок)
-    
-    const annotationTextFromBackend = loadedAnnotations[stemKey] || loadedAnnotations[baseNameKey] || null;
+    // shortKey — путь без виртуального корня (первого компонента src_timestamp_name)
+    const shortKey = stemKey.split("/").slice(1).join("/");
+
+    const annotationTextFromBackend = loadedAnnotations[stemKey] || loadedAnnotations[shortKey] || null;
+    // Для датасетов и видео аннотации приходят прямо в объекте файла
+    const annotationText = annotationTextFromBackend ?? file.annotationText ?? null;
 
     return {
       file: file,
@@ -40,9 +43,9 @@ function buildImagesWithAnnotations(files, loadedAnnotations = {}) {
       type: file.type,
       size: file.size,
       relativePath: file.relativePath,
-      split: null,
+      split: file.split || null,
       annotationFile: txtByStem.get(stemKey) || null,
-      annotationText: annotationTextFromBackend,
+      annotationText,
     };
   });
 }
@@ -127,16 +130,26 @@ function useCollections() {
     for (const folderNode of targetFolders) {
       if (!folderNode.absolutePath) {
         updatedFolders.push(folderNode);
-        continue; 
+        continue;
       }
-      const scanResult = await scanFolderOnBackend(folderNode.absolutePath, folderNode.path);
+      let scanResult;
+      if (folderNode.folderType === "videos" && folderNode.absolutePath) {
+        scanResult = await scanVideoFolderOnBackend(folderNode.absolutePath, folderNode.path, collection.workspacePath || "", 1);
+      } else if (folderNode.folderType === "dataset") {
+        scanResult = await scanDatasetFolderOnBackend(folderNode.absolutePath, folderNode.path);
+      } else {
+        scanResult = await scanFolderOnBackend(folderNode.absolutePath, folderNode.path);
+      }
       const mergedChildren = mergeTrees(folderNode.children || [], scanResult.tree || []);
       allUpdatedFiles.push(...scanResult.files);
       updatedFolders.push({ ...folderNode, children: mergedChildren });
     }
 
-    const images = buildImagesWithAnnotations(allUpdatedFiles, collection.loadedAnnotations || {});
-    setCollections((prev) => prev.map((c) => c.id === collectionId ? { ...c, images, imageCount: images.length, folders: updatedFolders } : c));
+    const allAnnotations = collection.workspacePath
+      ? await getAllAnnotations(collection.workspacePath)
+      : {};
+    const images = buildImagesWithAnnotations(allUpdatedFiles, allAnnotations);
+    setCollections((prev) => prev.map((c) => c.id === collectionId ? { ...c, images, imageCount: images.length, folders: updatedFolders, loadedAnnotations: allAnnotations } : c));
   };
 
   const debounceSync = useCallback((collection) => {
@@ -174,7 +187,14 @@ function useCollections() {
           continue;
         }
         try {
-          const scanResult = await scanFolderOnBackend(folderNode.absolutePath, folderNode.path);
+          let scanResult;
+          if (folderNode.folderType === "videos" && folderNode.absolutePath) {
+            scanResult = await scanVideoFolderOnBackend(folderNode.absolutePath, folderNode.path, config.path || "", 1);
+          } else if (folderNode.folderType === "dataset") {
+            scanResult = await scanDatasetFolderOnBackend(folderNode.absolutePath, folderNode.path);
+          } else {
+            scanResult = await scanFolderOnBackend(folderNode.absolutePath, folderNode.path);
+          }
           const mergedChildren = mergeTrees(folderNode.children || [], scanResult.tree || []);
           allUpdatedFiles.push(...scanResult.files);
           updatedFolders.push({ ...folderNode, children: mergedChildren });

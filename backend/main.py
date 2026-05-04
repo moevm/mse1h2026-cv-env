@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from core.paths import ensure_directories
-from api import dataset_router, augmentation_router, training_router, project_router, experiments_router
+from api import dataset_router, augmentation_router, training_router, project_router, experiments_router, video_router
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
 from contextlib import asynccontextmanager
@@ -53,3 +53,4 @@ app.include_router(augmentation_router.router)
 app.include_router(training_router.router)
 app.include_router(project_router.router)
 app.include_router(experiments_router.router)
+app.include_router(video_router.router)

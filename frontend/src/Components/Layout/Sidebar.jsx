@@ -57,8 +57,10 @@ function Sidebar({
   onCollectionClick,
   onAddCollection,
   onDeleteCollection,
-  onAddFolders,
-  onToggleFolder
+  onAddPhotoFolder,
+  onAddVideoFolder,
+  onAddDatasetFolder,
+  onToggleFolder,
 }) {
   const activeCollection = collections.find(c => c.id === currentCollectionId);
 
@@ -105,9 +107,18 @@ function Sidebar({
 
               {collection.id === currentCollectionId && (
                 <div className="active-project-workspace">
-                  <button className="add-folders-btn" onClick={onAddFolders}>
-                    + Добавить папки в проект
-                  </button>
+                  <div className="add-source-label">Добавить источник:</div>
+                  <div className="add-folders-group">
+                    <button className="add-folders-btn" onClick={onAddPhotoFolder}>
+                      📷 Папка с фото
+                    </button>
+                    <button className="add-folders-btn" onClick={onAddVideoFolder}>
+                      🎬 Папка с видео
+                    </button>
+                    <button className="add-folders-btn" onClick={onAddDatasetFolder}>
+                      📦 Готовый датасет
+                    </button>
+                  </div>
                   <div className="tree-container">
                     <FolderTree nodes={activeCollection?.folders} onToggle={onToggleFolder} />
                   </div>
