@@ -230,6 +230,50 @@
 .version-info {
   color: #6b7280;
   font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.source-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  background: #27ae60;
+  color: white;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.dataset-source-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #2c3e50;
+  cursor: pointer;
+  padding: 6px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: white;
+  user-select: none;
+  transition: border-color 0.2s, background 0.2s;
+  white-space: nowrap;
+}
+
+.dataset-source-toggle:hover {
+  border-color: #27ae60;
+  background: #f0faf5;
+}
+
+.dataset-source-toggle input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  accent-color: #27ae60;
+  cursor: pointer;
+  margin: 0;
 }
 
 .annotation-actions {
