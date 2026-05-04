@@ -188,6 +188,30 @@
   justify-self: end;
 }
 
+/* Augmentation Versions Section */
+.aug-versions-section {
+  background-color: white;
+  border-radius: 12px;
+  padding: 20px 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.aug-versions-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.aug-versions-header h3 {
+  color: #2c3e50;
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+}
+
 /* Action Buttons */
 .buttons {
   display: flex;
@@ -196,8 +220,7 @@
   margin-top: 8px;
 }
 
-.apply-all-btn,
-.new-version-btn {
+.apply-all-btn {
   padding: 14px 28px;
   border: none;
   border-radius: 8px;
@@ -206,9 +229,6 @@
   cursor: pointer;
   transition: all 0.3s;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-.apply-all-btn {
   background-color: #3498db;
   color: white;
 }
@@ -217,17 +237,6 @@
   background-color: #2980b9;
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
-}
-
-.new-version-btn {
-  background-color: #27ae60;
-  color: white;
-}
-
-.new-version-btn:hover {
-  background-color: #229954;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(39, 174, 96, 0.3);
 }
 
 /* Responsive Design */

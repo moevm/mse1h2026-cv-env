@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import VersionList from "./VersionList";
 import { getDisabledFolderPaths } from "../../utils/fileSystem";
 import "../../styles/DatasetView.css";
@@ -7,12 +7,16 @@ function DatasetView({
   collection,
   versions,
   currentVersionId,
+  versionsLoading,
   onCreateVersion,
   onSelectVersion,
+  onDeleteVersion,
   onUpdateSplit,
-  onSync
+  onSync,
 }) {
-  
+  const [showNameInput, setShowNameInput] = useState(false);
+  const [versionName, setVersionName] = useState("");
+
   const ignoredPaths = useMemo(() => {
     return collection?.folders ? getDisabledFolderPaths(collection.folders) : [];
   }, [collection?.folders]);
@@ -20,11 +24,33 @@ function DatasetView({
   const activeImagesCount = useMemo(() => {
     if (!collection?.images) return 0;
     if (ignoredPaths.length === 0) return collection.images.length;
-
-    return collection.images.filter(img => {
-      return !ignoredPaths.some(ignoredPath => img.relativePath.startsWith(ignoredPath + '/'));
-    }).length;
+    return collection.images.filter(img =>
+      !ignoredPaths.some(p => img.relativePath.startsWith(p + "/"))
+    ).length;
   }, [collection?.images, ignoredPaths]);
+
+  function handleNewVersionClick() {
+    setVersionName(`Версия ${versions.length + 1}`);
+    setShowNameInput(true);
+  }
+
+  function handleCancel() {
+    setShowNameInput(false);
+    setVersionName("");
+  }
+
+  async function handleSave() {
+    const trimmed = versionName.trim();
+    if (!trimmed) return;
+    setShowNameInput(false);
+    setVersionName("");
+    await onCreateVersion(trimmed);
+  }
+
+  function handleKeyDown(e) {
+    if (e.key === "Enter") handleSave();
+    if (e.key === "Escape") handleCancel();
+  }
 
   return (
     <div className="dataset-view">
@@ -32,17 +58,39 @@ function DatasetView({
         <div>
           <h2>{collection.name}</h2>
           <p className="collection-info">
-            Создано: {new Date(collection.date).toLocaleDateString()} • 
-            Активных изображений: {activeImagesCount} (Всего загружено: {collection?.images?.length || 0})
+            Создано: {new Date(collection.date).toLocaleDateString()} •{" "}
+            Активных изображений: {activeImagesCount} (Всего: {collection?.images?.length || 0})
           </p>
         </div>
         <div className="dataset-actions">
-          <button
-            className="action-button primary"
-            onClick={() => onCreateVersion(`Версия ${versions.length + 1}`)}
-          >
-            + Новая версия
-          </button>
+          {!showNameInput ? (
+            <button
+              className="action-button primary"
+              onClick={handleNewVersionClick}
+              disabled={versionsLoading}
+            >
+              {versionsLoading ? "Сохранение..." : "+ Новая версия"}
+            </button>
+          ) : (
+            <div className="version-name-form">
+              <input
+                className="version-name-input"
+                type="text"
+                value={versionName}
+                onChange={e => setVersionName(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Название версии"
+                autoFocus
+                maxLength={80}
+              />
+              <button className="action-button primary" onClick={handleSave} disabled={!versionName.trim()}>
+                Сохранить
+              </button>
+              <button className="action-button" onClick={handleCancel}>
+                Отмена
+              </button>
+            </div>
+          )}
           <button
             className="action-button"
             onClick={() => onSync(collection.id)}
@@ -59,8 +107,9 @@ function DatasetView({
           <VersionList
             versions={versions}
             currentVersionId={currentVersionId}
+            versionsLoading={versionsLoading}
             onSelectVersion={onSelectVersion}
-            collectionName={collection.name}
+            onDeleteVersion={onDeleteVersion}
           />
         </div>
       </div>

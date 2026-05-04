@@ -17,3 +17,16 @@ class AutosavePayload(BaseModel):
     content: str
     workspace_path: str
     classes: list[str]
+
+class SaveVersionPayload(BaseModel):
+    workspace_path: str = ""
+    name: str
+
+class SwitchVersionPayload(BaseModel):
+    workspace_path: str = ""
+    version_id: str
+
+class ImportDatasetPayload(BaseModel):
+    source_path: str
+    dataset_name: str
+    workspace_path: str = ""

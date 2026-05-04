@@ -12,7 +12,9 @@ import yaml
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from core.paths import get_project_paths, ensure_project_directories
-from schemas.dataset_schema import ExportPayload, AutosavePayload
+from schemas.dataset_schema import ExportPayload, AutosavePayload, SaveVersionPayload, SwitchVersionPayload, ImportDatasetPayload
+from services import version_service
+from services.project_service import scan_dataset_structure
 
 router = APIRouter(prefix="/api/datasets", tags=["Datasets"])
 
@@ -151,6 +153,119 @@ def _build_split_plan(items: list[dict[str, Any]], train_percent: int, val_perce
             item["split"] = "test"
             
     return sorted_items
+
+
+@router.get("/versions")
+def get_versions(workspace_path: str = Query(None)):
+    try:
+        versions = version_service.list_versions(workspace_path or "")
+        return {"versions": versions}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/versions/save")
+def save_version(payload: SaveVersionPayload):
+    if not payload.name or not payload.name.strip():
+        raise HTTPException(status_code=400, detail="Название версии не может быть пустым")
+    try:
+        metadata = version_service.save_version(payload.workspace_path or "", payload.name.strip())
+        return {"status": "success", "version": metadata}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/versions/switch")
+def switch_version(payload: SwitchVersionPayload):
+    if not payload.version_id:
+        raise HTTPException(status_code=400, detail="version_id обязателен")
+    try:
+        metadata = version_service.switch_version(payload.workspace_path or "", payload.version_id)
+        return {"status": "success", "version": metadata}
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.delete("/versions/{version_id}")
+def delete_version(version_id: str, workspace_path: str = Query(None)):
+    try:
+        ok = version_service.delete_version(workspace_path or "", version_id)
+        if not ok:
+            raise HTTPException(status_code=404, detail="Версия не найдена")
+        return {"status": "success"}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/import-folder")
+def import_dataset_folder(payload: ImportDatasetPayload):
+    """Копирует внешнюю YOLO-папку в {workspace}/datasets/{name}/ и возвращает список файлов."""
+    source = Path(payload.source_path)
+    if not source.is_dir():
+        raise HTTPException(status_code=400, detail=f"Папка не найдена: {payload.source_path}")
+
+    project_paths = ensure_project_directories(payload.workspace_path)
+    safe_name = _sanitize_dataset_name(payload.dataset_name)
+    dest = Path(project_paths["datasets"]) / safe_name
+
+    try:
+        if dest.exists():
+            shutil.rmtree(dest)
+        shutil.copytree(str(source), str(dest))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Ошибка копирования: {exc}")
+
+    try:
+        result = scan_dataset_structure(str(dest), safe_name)
+    except Exception:
+        result = {"files": [], "tree": [], "classes": []}
+
+    return {
+        "status": "success",
+        "dataset_name": safe_name,
+        "dataset_path": str(dest),
+        "files": result.get("files", []),
+        "classes": result.get("classes", []),
+    }
+
+
+@router.get("/scan-workspace")
+def scan_workspace_datasets(workspace_path: str = Query(None)):
+    """Сканирует папку datasets/ рабочего пространства и возвращает файлы с аннотациями.
+
+    datasets/ содержит подпапки (по одной на каждый экспортированный датасет).
+    Каждая подпапка имеет структуру train/val/test с images/ и labels/.
+    """
+    datasets_dir = get_project_paths(workspace_path or "")["datasets"]
+    if not os.path.isdir(datasets_dir):
+        return {"files": [], "tree": [], "classes": []}
+    try:
+        datasets_root = Path(datasets_dir)
+        subdirs = sorted([d for d in datasets_root.iterdir() if d.is_dir()])
+
+        if not subdirs:
+            return {"files": [], "tree": [], "classes": []}
+
+        all_files: list = []
+        all_classes: set = set()
+        all_tree: list = []
+
+        for subdir in subdirs:
+            try:
+                result = scan_dataset_structure(str(subdir), subdir.name)
+                all_files.extend(result.get("files", []))
+                all_classes.update(result.get("classes", []))
+                all_tree.extend(result.get("tree", []))
+            except Exception:
+                pass
+
+        return {"files": all_files, "tree": all_tree, "classes": sorted(all_classes)}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @router.post("/autosave")

@@ -4,7 +4,7 @@ import ImageViewer from "./ImageViewer";
 
 import useAnnotations from "../../hooks/useAnnotations";
 import { getDisabledFolderPaths } from "../../utils/fileSystem";
-import { exportDataset, getImageUrl, readTextFileSafe } from "../../services/api";
+import { exportDataset, getImageUrl, readTextFileSafe, scanWorkspaceDatasets } from "../../services/api";
 import { annotationToYoloLine } from "../../utils/yolo";
 
 import "../../styles/AnnotationView.css";
@@ -56,6 +56,11 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
 
+  const [useDatasetSource, setUseDatasetSource] = useState(false);
+  const [datasetImages, setDatasetImages] = useState([]);
+  const [datasetLoading, setDatasetLoading] = useState(false);
+  const [datasetRefreshKey, setDatasetRefreshKey] = useState(0);
+
   const annotationsManager = useAnnotations(collection?.workspacePath, collection?.projectClasses);
 
   useEffect(() => {
@@ -73,15 +78,38 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
 
   const currentVersion = versions.find((v) => v.id === currentVersionId);
 
+  // Загружаем файлы из datasets/ при включении режима или смене версии
+  useEffect(() => {
+    if (!useDatasetSource || !collection) {
+      setDatasetImages([]);
+      return;
+    }
+    setDatasetLoading(true);
+    const cacheBuster = Date.now();
+    scanWorkspaceDatasets(collection.workspacePath || "")
+      .then(result => {
+        const files = result.files || [];
+        setDatasetImages(files.map(f => ({
+          ...f,
+          absolutePath: f.absolute_path,
+          url: `${getImageUrl(f.absolute_path)}&_t=${cacheBuster}`,
+          uuid: f.relativePath,
+        })));
+      })
+      .catch((err) => { console.error("[datasets scan]", err); setDatasetImages([]); })
+      .finally(() => setDatasetLoading(false));
+  }, [useDatasetSource, collection?.id, currentVersionId, datasetRefreshKey]);
+
   const ignoredPaths = useMemo(() => {
     return collection?.folders ? getDisabledFolderPaths(collection.folders) : [];
   }, [collection?.folders]);
 
   const images = useMemo(() => {
+    if (useDatasetSource) return datasetImages;
     const baseImages = currentVersion?.images || collection?.images || [];
     if (ignoredPaths.length === 0) return baseImages;
     return baseImages.filter(img => !ignoredPaths.some(ignoredPath => img.relativePath.startsWith(ignoredPath + '/')));
-  }, [collection?.images, currentVersion?.images, ignoredPaths]);
+  }, [useDatasetSource, datasetImages, collection?.images, currentVersion?.images, ignoredPaths]);
 
   const galleryImages = images.map((image) => ({
     ...image,
@@ -278,9 +306,32 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
       <div className="annotation-header">
         <div>
           <h2>{collection.name}</h2>
-          <div className="version-info">Всего изображений: {images.length}</div>
+          <div className="version-info">
+            Всего изображений: {datasetLoading ? "..." : images.length}
+            {useDatasetSource && !datasetLoading && (
+              <span className="source-badge">из datasets/</span>
+            )}
+          </div>
         </div>
-        <div className="annotation-actions" style={{ display: 'flex', gap: '10px' }}>
+        <div className="annotation-actions" style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <label className="dataset-source-toggle" title="Показывать файлы из папки datasets/ вместо исходных файлов проекта">
+            <input
+              type="checkbox"
+              checked={useDatasetSource}
+              onChange={e => { setUseDatasetSource(e.target.checked); setCurrentImage(null); }}
+            />
+            <span>Из datasets/</span>
+          </label>
+          {useDatasetSource && (
+            <button
+              className="action-button secondary"
+              onClick={() => { setDatasetRefreshKey(k => k + 1); setCurrentImage(null); }}
+              disabled={datasetLoading}
+              title="Обновить список файлов из datasets/"
+            >
+              {datasetLoading ? "..." : "↻"}
+            </button>
+          )}
           <button className="action-button secondary" onClick={() => handleSaveDataset("flat")} disabled={isSaving || images.length === 0}>
             {isSaving ? "Сохранение..." : "Сохранить (Без сплита)"}
           </button>

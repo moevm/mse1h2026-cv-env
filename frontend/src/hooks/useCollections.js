@@ -137,12 +137,20 @@ function useCollections() {
         scanResult = await scanVideoFolderOnBackend(folderNode.absolutePath, folderNode.path, collection.workspacePath || "", 1);
       } else if (folderNode.folderType === "dataset") {
         scanResult = await scanDatasetFolderOnBackend(folderNode.absolutePath, folderNode.path);
+      } else if (folderNode.folderType === "imported_dataset") {
+        // Импортированный датасет живёт в datasets/ — сканируем рекурсивно, но не показываем дочерние папки
+        scanResult = await scanDatasetFolderOnBackend(folderNode.absolutePath, folderNode.path);
       } else {
         scanResult = await scanFolderOnBackend(folderNode.absolutePath, folderNode.path);
       }
-      const mergedChildren = mergeTrees(folderNode.children || [], scanResult.tree || []);
       allUpdatedFiles.push(...scanResult.files);
-      updatedFolders.push({ ...folderNode, children: mergedChildren });
+      if (folderNode.folderType === "imported_dataset") {
+        // Не разворачиваем train/val/test — показываем только корень
+        updatedFolders.push({ ...folderNode, children: [] });
+      } else {
+        const mergedChildren = mergeTrees(folderNode.children || [], scanResult.tree || []);
+        updatedFolders.push({ ...folderNode, children: mergedChildren });
+      }
     }
 
     const allAnnotations = collection.workspacePath
@@ -192,12 +200,18 @@ function useCollections() {
             scanResult = await scanVideoFolderOnBackend(folderNode.absolutePath, folderNode.path, config.path || "", 1);
           } else if (folderNode.folderType === "dataset") {
             scanResult = await scanDatasetFolderOnBackend(folderNode.absolutePath, folderNode.path);
+          } else if (folderNode.folderType === "imported_dataset") {
+            scanResult = await scanDatasetFolderOnBackend(folderNode.absolutePath, folderNode.path);
           } else {
             scanResult = await scanFolderOnBackend(folderNode.absolutePath, folderNode.path);
           }
-          const mergedChildren = mergeTrees(folderNode.children || [], scanResult.tree || []);
           allUpdatedFiles.push(...scanResult.files);
-          updatedFolders.push({ ...folderNode, children: mergedChildren });
+          if (folderNode.folderType === "imported_dataset") {
+            updatedFolders.push({ ...folderNode, children: [] });
+          } else {
+            const mergedChildren = mergeTrees(folderNode.children || [], scanResult.tree || []);
+            updatedFolders.push({ ...folderNode, children: mergedChildren });
+          }
         } catch (error) {
           updatedFolders.push(folderNode);
         }

@@ -105,6 +105,57 @@ export const saveAugmentations = async (data, workspacePath) => {
   return await res.json();
 };
 
+export const importDatasetFolder = async (sourcePath, datasetName, workspacePath) => {
+  const res = await fetch(`${API_BASE_URL}/api/datasets/import-folder`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source_path: sourcePath, dataset_name: datasetName, workspace_path: workspacePath || "" }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Ошибка импорта датасета");
+  }
+  return await res.json();
+};
+
+export const scanWorkspaceDatasets = async (workspacePath) => {
+  const res = await fetch(`${API_BASE_URL}/api/datasets/scan-workspace${buildQuery(workspacePath)}`);
+  if (!res.ok) throw new Error("Ошибка сканирования datasets/");
+  return await res.json();
+};
+
+// Augmentation Versions
+export const listAugVersions = async (workspacePath) => {
+  const res = await fetch(`${API_BASE_URL}/api/augmentation/versions${buildQuery(workspacePath)}`);
+  if (!res.ok) throw new Error("Ошибка загрузки версий аугментации");
+  return await res.json();
+};
+
+export const saveAugVersion = async (workspacePath, name, params) => {
+  const res = await fetch(`${API_BASE_URL}/api/augmentation/versions/save`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ workspace_path: workspacePath || "", name, params }),
+  });
+  if (!res.ok) throw new Error("Ошибка сохранения версии аугментации");
+  return await res.json();
+};
+
+export const switchAugVersion = async (workspacePath, versionId) => {
+  const res = await fetch(`${API_BASE_URL}/api/augmentation/versions/switch`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ workspace_path: workspacePath || "", version_id: versionId }),
+  });
+  if (!res.ok) throw new Error("Ошибка переключения версии аугментации");
+  return await res.json();
+};
+
+export const deleteAugVersion = async (workspacePath, versionId) => {
+  const q = buildQuery(workspacePath);
+  const res = await fetch(`${API_BASE_URL}/api/augmentation/versions/${versionId}${q}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Ошибка удаления версии аугментации");
+  return await res.json();
+};
+
 // Training
 export const getTrainingConfig = async (workspacePath) => {
   const res = await fetch(`${API_BASE_URL}/api/training/config${buildQuery(workspacePath)}`);
@@ -238,6 +289,54 @@ export const getAutosaveAnnotations = async (workspacePath) => {
   if (!res.ok) return {};
   const data = await res.json();
   return data.annotations || {};
+};
+
+// ----- Dataset Versions API -----
+export const listDatasetVersions = async (workspacePath) => {
+  const res = await fetch(`${API_BASE_URL}/api/datasets/versions${buildQuery(workspacePath)}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Ошибка загрузки версий");
+  }
+  return await res.json();
+};
+
+export const saveDatasetVersion = async (workspacePath, name) => {
+  const res = await fetch(`${API_BASE_URL}/api/datasets/versions/save`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ workspace_path: workspacePath || "", name }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Ошибка сохранения версии");
+  }
+  return await res.json();
+};
+
+export const switchDatasetVersion = async (workspacePath, versionId) => {
+  const res = await fetch(`${API_BASE_URL}/api/datasets/versions/switch`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ workspace_path: workspacePath || "", version_id: versionId }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Ошибка переключения версии");
+  }
+  return await res.json();
+};
+
+export const deleteDatasetVersion = async (workspacePath, versionId) => {
+  const res = await fetch(
+    `${API_BASE_URL}/api/datasets/versions/${encodeURIComponent(versionId)}${buildQuery(workspacePath)}`,
+    { method: "DELETE" }
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Ошибка удаления версии");
+  }
+  return await res.json();
 };
 
 // ----- Experiments API -----
