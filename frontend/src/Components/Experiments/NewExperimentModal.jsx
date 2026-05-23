@@ -17,13 +17,11 @@ const NewExperimentModal = ({
   const [localLoading, setLocalLoading] = useState(false);
   const isLoading = parentLoading || localLoading;
 
-
   const formatModelLabel = (model) => {
     const path = model.value;
     const originalLabel = model.label;
     if (!path) return originalLabel;
     
-
     const parts = path.split(/[\\\/]/);
     if (parts.length < 2) return originalLabel;
     
@@ -134,6 +132,32 @@ const NewExperimentModal = ({
               placeholder="Напр: coco8.yaml или путь/к/файлу"
             />
           </label>
+
+          <hr style={{ margin: '20px 0', borderColor: '#e5e7eb' }} />
+
+
+            <label>Confidence Threshold:
+              <input
+                type="number"
+                step="0.05"
+                min="0"
+                max="1"
+                value={form.conf_threshold}
+                onChange={(e) => setForm({ ...form, conf_threshold: parseFloat(e.target.value) })}
+              />
+            </label>
+
+            <label>IoU Threshold:
+              <input
+                type="number"
+                step="0.05"
+                min="0"
+                max="1"
+                value={form.iou_threshold}
+                onChange={(e) => setForm({ ...form, iou_threshold: parseFloat(e.target.value) })}
+              />
+            </label>
+
 
           <div className="exp-modal-actions" style={{ marginTop: '20px' }}>
              <button className="exp-primary-btn" type="submit" disabled={isLoading}>
