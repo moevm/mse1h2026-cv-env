@@ -7,11 +7,22 @@ import { annotationToYoloLine } from "../../utils/yolo";
 import { autosaveAnnotation } from "../../services/api";
 import "../../styles/AnnotationView.css";
 
-function ImageAnnotator({ imageUrl, imageId, imageName, imageAbsPath, imageRelativePath, workspacePath, onClose, annotationsManager, onSaveAnnotation }) {
+function ImageAnnotator({ 
+  imageUrl, 
+  imageId, 
+  imageName, 
+  imageAbsPath, 
+  imageRelativePath, 
+  workspacePath, 
+  onClose, 
+  annotationsManager, 
+  onSaveAnnotation,
+  currentTool,      
+  setCurrentTool
+}) {
   const { annotations, classes, addAnnotation, addClass, updateAnnotation, deleteAnnotation, getClassColor } = annotationsManager;
 
   const [isDrawing, setIsDrawing] = useState(false);
-  const [currentTool, setCurrentTool] = useState(null);
   const [startPoint, setStartPoint] = useState(null);
   const [currentRect, setCurrentRect] = useState(null);
   const [currentPolygon, setCurrentPolygon] = useState([]);
@@ -192,8 +203,11 @@ function ImageAnnotator({ imageUrl, imageId, imageName, imageAbsPath, imageRelat
   }, [isDrawing, currentTool]);
 
   useEffect(() => {
-    setCurrentRect(null); setCurrentPolygon([]); setIsDrawing(false); setSelectedForEdit(null);
-  }, [currentTool]);
+    setCurrentRect(null);
+    setCurrentPolygon([]);
+    setIsDrawing(false);
+    setSelectedForEdit(null);
+  }, [currentTool, imageId]);
 
   const handleSaveAnnotation = useCallback(async (classId, newClassName = null) => {
       try {
@@ -207,8 +221,38 @@ function ImageAnnotator({ imageUrl, imageId, imageName, imageAbsPath, imageRelat
     }, [selectedAnnotation, addClass, addAnnotation]);
 
   const handleCancelAnnotation = useCallback(() => { setShowPopup(false); setSelectedAnnotation(null); }, []);
-  const handleZoomIn = useCallback(() => setZoom((prev) => Math.min(prev + 0.1, 3)), []);
-  const handleZoomOut = useCallback(() => setZoom((prev) => Math.max(prev - 0.1, 0.5)), []);
+  
+  const handleZoomIn = useCallback(() => {
+    const container = document.querySelector(".canvas-container");
+    if (container) {
+      const oldZoom = zoom;
+      const newZoom = Math.min(zoom + 0.2, 4);
+      const scale = newZoom / oldZoom;
+      
+      const centerX = container.clientWidth / 2;
+      const centerY = container.clientHeight / 2;
+      container.scrollLeft = (container.scrollLeft + centerX) * scale - centerX;
+      container.scrollTop = (container.scrollTop + centerY) * scale - centerY;
+      
+      setZoom(newZoom);
+    }
+  }, [zoom]);
+
+  const handleZoomOut = useCallback(() => {
+    const container = document.querySelector(".canvas-container");
+    if (container) {
+      const oldZoom = zoom;
+      const newZoom = Math.max(zoom - 0.2, 0.4);
+      const scale = newZoom / oldZoom;
+      
+      const centerX = container.clientWidth / 2;
+      const centerY = container.clientHeight / 2;
+      container.scrollLeft = (container.scrollLeft + centerX) * scale - centerX;
+      container.scrollTop = (container.scrollTop + centerY) * scale - centerY;
+      
+      setZoom(newZoom);
+    }
+  }, [zoom]);
 
   return (
     <div className="image-annotator">
@@ -220,13 +264,15 @@ function ImageAnnotator({ imageUrl, imageId, imageName, imageAbsPath, imageRelat
             selectedForEdit={selectedForEdit} currentRect={currentRect} currentPolygon={currentPolygon}
             currentTool={currentTool} mousePosition={mousePosition} onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onClick={handleClick}
-            onDoubleClick={handleDoubleClick} onContextMenu={handleContextMenu} onMouseLeave={handleMouseLeave} zoom={zoom}
+            onDoubleClick={handleDoubleClick} onContextMenu={handleContextMenu} onMouseLeave={handleMouseLeave} 
+            zoom={zoom}
+            setZoom={setZoom} 
           />
         </div>
         <AnnotationToolbar 
           currentTool={currentTool} 
           onToolSelect={setCurrentTool} 
-          onZoomIncr={handleZoomIn} // Исправлено имя пропса
+          onZoomIncr={handleZoomIn} 
           onZoomDecr={handleZoomOut} 
         />
       </div>
