@@ -156,7 +156,7 @@ class ExperimentService:
                 metrics = data.get("final_metrics", {})
                 experiments.append(ExperimentSummary(
                     id=exp_id, name=data["name"], model_path=data["model_path"],
-                    map50=metrics.get("map50", 0.0), precision=metrics.get("precision", 0.0),
+                    map50=metrics.get("map50", 0.0), map_=metrics.get("map50_95", 0.0), precision=metrics.get("precision", 0.0),
                     recall=metrics.get("recall", 0.0), f1=metrics.get("f1", 0.0),
                     status=data["status"], created_at=datetime.fromisoformat(data["created_at"])
                 ))
@@ -173,7 +173,7 @@ class ExperimentService:
             metrics = data.get("final_metrics", {})
             result[exp_id] = ExperimentDetail(
                 id=exp_id, name=data["name"], model_path=data["model_path"],
-                map50=metrics.get("map50", 0.0), precision=metrics.get("precision", 0.0),
+                map50=metrics.get("map50", 0.0), map_=metrics.get("map50_95", 0.0), precision=metrics.get("precision", 0.0),
                 recall=metrics.get("recall", 0.0), f1=metrics.get("f1", 0.0),
                 status=data["status"], created_at=datetime.fromisoformat(data["created_at"]),
                 conf_threshold=data["conf_threshold"], iou_threshold=data["iou_threshold"],

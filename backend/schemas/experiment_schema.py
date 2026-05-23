@@ -15,6 +15,7 @@ class ExperimentSummary(BaseModel):
     name: str
     model_path: str
     map50: float
+    map_: float
     precision: float
     recall: float
     f1: float
