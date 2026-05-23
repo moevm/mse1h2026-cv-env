@@ -91,6 +91,8 @@ function ImageViewer({ image, collection, onClose, onNext, onPrev, hasNext, hasP
             onClose={onClose}
             annotationsManager={annotationsManager}
             onSaveAnnotation={onSaveAnnotation}
+            currentTool={currentTool}
+            setCurrentTool={setCurrentTool}
           />
         )}
       </div>
