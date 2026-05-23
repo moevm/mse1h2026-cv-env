@@ -226,7 +226,7 @@ function ImageAnnotator({ imageUrl, imageId, imageName, imageAbsPath, imageRelat
         <AnnotationToolbar 
           currentTool={currentTool} 
           onToolSelect={setCurrentTool} 
-          onZoomIncr={handleZoomIn} 
+          onZoomIncr={handleZoomIn} // Исправлено имя пропса
           onZoomDecr={handleZoomOut} 
         />
       </div>
