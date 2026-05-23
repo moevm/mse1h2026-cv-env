@@ -157,18 +157,18 @@ function ExperimentsView({ collection }) {
     <div className="experiments-view">
       <div className="filters">
         <div className="sort-controls">
-          <label>Сортировать по:</label>
-          <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
-            <option value="map50">mAP50</option>
-            <option value="precision">Precision</option>
-            <option value="recall">Recall</option>
-            <option value="f1">F1 Score</option>
-          </select>
-          <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}>
-            <option value="desc">По убыванию</option>
-            <option value="asc">По возрастанию</option>
-          </select>
-        </div>
+		  <label>Сортировать по:</label>
+		  <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+			<option value="map50">mAP50</option>
+			<option value="map">mAP</option>
+			<option value="precision">Precision</option>
+			<option value="recall">Recall</option>
+		  </select>
+		  <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}>
+			<option value="desc">По убыванию</option>
+			<option value="asc">По возрастанию</option>
+		  </select>
+		</div>
         <button onClick={() => setShowNewExpModal(true)} disabled={loading}>
           🧪 Новый эксперимент
         </button>
@@ -181,54 +181,54 @@ function ExperimentsView({ collection }) {
       </div>
 
       <div className="experiment-table">
-        <table>
-          <thead>
-            <tr>
-              <th>Выбрать</th>
-              <th>Название</th>
-              <th>Модель</th>
-              <th>mAP50</th>
-              <th>Precision</th>
-              <th>Recall</th>
-              <th>F1</th>
-              <th>Статус</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {experiments.map((exp) => (
-              <tr key={exp.id}>
-                <td>
-                  <input
-                    type="checkbox"
-                    checked={selectedExps.includes(exp.id)}
-                    onChange={() => handleSelectExp(exp.id)}
-                    disabled={exp.status !== "completed"}
-                  />
-                </td>
-                <td>{exp.name}</td>
-                <td className="model-path">{exp.model_path}</td>
-                <td className="metric-value">{exp.map50?.toFixed(3) || "0.000"}</td>
-                <td className="metric-value">{exp.precision?.toFixed(3) || "0.000"}</td>
-                <td className="metric-value">{exp.recall?.toFixed(3) || "0.000"}</td>
-                <td className="metric-value">{exp.f1?.toFixed(3) || "0.000"}</td>
-                <td className={`status-${exp.status}`}>
-                  {exp.status === "completed" ? "✅ Завершён" : exp.status}
-                </td>
-                <td>
-                  <button
-                    className="delete-exp-btn"
-                    onClick={() => handleDeleteExperiment(exp.id, exp.name)}
-                    disabled={exp.status === "running"}
-                    title="Удалить эксперимент"
-                  >
-                    🗑️
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <table className="experiment-table">
+		  <thead>
+			<tr>
+			  <th>Выбрать</th>
+			  <th>Название</th>
+			  <th>Модель</th>
+			  <th>mAP50</th>
+			  <th>mAP</th>
+			  <th>Precision</th>
+			  <th>Recall</th>
+			  <th>Статус</th>
+			  <th></th>
+			</tr>
+		  </thead>
+		  <tbody>
+			{experiments.map((exp) => (
+			  <tr key={exp.id}>
+				<td>
+				  <input
+				    type="checkbox"
+				    checked={selectedExps.includes(exp.id)}
+				    onChange={() => handleSelectExp(exp.id)}
+				    disabled={exp.status !== "completed"}
+				  />
+				</td>
+				<td>{exp.name}</td>
+				<td className="model-path">{exp.model_path}</td>
+				<td className="metric-value">{exp.map50?.toFixed(3) || "0.000"}</td>
+				<td className="metric-value">{exp.map_?.toFixed(3) || "0.000"}</td>
+				<td className="metric-value">{exp.precision?.toFixed(3) || "0.000"}</td>
+				<td className="metric-value">{exp.recall?.toFixed(3) || "0.000"}</td>
+				<td className={`status-${exp.status}`}>
+				  {exp.status === "completed" ? "✅ Завершён" : exp.status}
+				</td>
+				<td>
+				  <button
+				    className="delete-exp-btn"
+				    onClick={() => handleDeleteExperiment(exp.id, exp.name)}
+				    disabled={exp.status === "running"}
+				    title="Удалить эксперимент"
+				  >
+				    🗑️
+				  </button>
+				</td>
+			  </tr>
+			))}
+		  </tbody>
+		</table>
         {/* Индикатор загрузки показываем только при явном действии, не при поллинге */}
         {loading && !isPolling && <div className="loading">Загрузка...</div>}
         {!loading && experiments.length === 0 && (

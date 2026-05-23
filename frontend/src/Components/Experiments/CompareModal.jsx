@@ -41,56 +41,56 @@ const CompareModal = ({ experiments, onClose, collection }) => {
         </div>
 
         <div className="compare-modal-content">
-          {/* Таблица с метриками */}
-          <h3>Сравнение метрик</h3>
-          <div className="metrics-table-container">
-            <table className="compare-metrics-table">
-              <thead>
-                <tr>
-                  <th>Метрика</th>
-                  {experiments.map((exp) => (
-                    <th key={exp.id}>{exp.name}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td className="metric-name">mAP50</td>
-                  {experiments.map((exp) => (
-                    <td key={exp.id} className="metric-value">
-                      {exp.map50?.toFixed(4) || "—"}
-                    </td>
-                  ))}
-                </tr>
-                <tr>
-                  <td className="metric-name">Precision</td>
-                  {experiments.map((exp) => (
-                    <td key={exp.id} className="metric-value">
-                      {exp.precision?.toFixed(4) || "—"}
-                    </td>
-                  ))}
-                </tr>
-                <tr>
-                  <td className="metric-name">Recall</td>
-                  {experiments.map((exp) => (
-                    <td key={exp.id} className="metric-value">
-                      {exp.recall?.toFixed(4) || "—"}
-                    </td>
-                  ))}
-                </tr>
-                <tr>
-                  <td className="metric-name">F1 Score</td>
-                  {experiments.map((exp) => (
-                    <td key={exp.id} className="metric-value">
-                      {exp.f1?.toFixed(4) || "—"}
-                    </td>
-                  ))}
-                </tr>
-              </tbody>
-            </table>
-          </div>
 
-          {/* Графики */}
+		<h3>Сравнение метрик</h3>
+		<div className="metrics-table-container">
+		  <table className="compare-metrics-table">
+			<thead>
+			  <tr>
+				<th>Метрика</th>
+				{experiments.map((exp) => (
+				  <th key={exp.id}>{exp.name}</th>
+				))}
+			  </tr>
+			</thead>
+			<tbody>
+			  <tr>
+				<td className="metric-name">mAP50</td>
+				{experiments.map((exp) => (
+				  <td key={exp.id} className="metric-value">
+					{exp.map50?.toFixed(4) || "—"}
+				  </td>
+				))}
+			  </tr>
+			  <tr>
+				<td className="metric-name">mAP</td>
+				{experiments.map((exp) => (
+				  <td key={exp.id} className="metric-value">
+					{exp.map_?.toFixed(4) || "—"}
+				  </td>
+				))}
+			  </tr>
+			  <tr>
+				<td className="metric-name">Precision</td>
+				{experiments.map((exp) => (
+				  <td key={exp.id} className="metric-value">
+					{exp.precision?.toFixed(4) || "—"}
+				  </td>
+				))}
+			  </tr>
+			  <tr>
+				<td className="metric-name">Recall</td>
+				{experiments.map((exp) => (
+				  <td key={exp.id} className="metric-value">
+					{exp.recall?.toFixed(4) || "—"}
+				  </td>
+				))}
+			  </tr>
+			</tbody>
+		  </table>
+		</div>
+		
+
           {GRAPHIC_TYPES.map((type) => {
             const currentExpId = selectedExpPerType[type.key];
             const currentExp = experiments.find((exp) => exp.id === currentExpId);
