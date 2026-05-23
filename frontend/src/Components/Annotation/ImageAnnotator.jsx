@@ -26,7 +26,6 @@ function ImageAnnotator({ imageUrl, imageId, imageName, imageAbsPath, imageRelat
 
   const currentImageAnnotations = useMemo(() => annotations.filter((a) => a.imageId === imageId), [annotations, imageId]);
 
-  // 1. Создаем хранилище для самых свежих данных (чтобы не пересоздавать таймер)
   const latestProps = useRef({ classes, imageAbsPath, imageRelativePath, workspacePath, imageUrl, imageId, onSaveAnnotation });
   useEffect(() => {
     latestProps.current = { classes, imageAbsPath, imageRelativePath, workspacePath, imageUrl, imageId, onSaveAnnotation };
@@ -35,7 +34,6 @@ function ImageAnnotator({ imageUrl, imageId, imageName, imageAbsPath, imageRelat
   const isInitialMount = useRef(true);
   const prevAnnotationsRef = useRef(null);
 
-  // 2. Таймер теперь реагирует ТОЛЬКО на изменение самих боксов
   useEffect(() => {
     if (isInitialMount.current) {
       isInitialMount.current = false;
@@ -55,12 +53,11 @@ function ImageAnnotator({ imageUrl, imageId, imageName, imageAbsPath, imageRelat
       });
     }
 
-    if (isSame) return; // Если боксы не менялись - ничего не делаем, таймер не сбрасывается!
+    if (isSame) return;
     prevAnnotationsRef.current = currentImageAnnotations;
 
     const timer = setTimeout(async () => {
       try {
-        // Достаем самые актуальные данные прямо перед сохранением
         const { classes: latestClasses, imageAbsPath: latestPath, imageRelativePath: latestRelPath, workspacePath: latestWs, imageUrl: latestUrl, imageId: latestId, onSaveAnnotation: latestOnSave } = latestProps.current;
         
         if (!latestPath || !latestWs) return;
@@ -93,7 +90,7 @@ function ImageAnnotator({ imageUrl, imageId, imageName, imageAbsPath, imageRelat
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [currentImageAnnotations]); // УБРАЛИ ВСЕ ЛИШНИЕ ЗАВИСИМОСТИ!
+  }, [currentImageAnnotations]);
 
   const findAnnotationAtPoint = useCallback((point) => {
       for (let i = currentImageAnnotations.length - 1; i >= 0; i--) {
@@ -226,7 +223,12 @@ function ImageAnnotator({ imageUrl, imageId, imageName, imageAbsPath, imageRelat
             onDoubleClick={handleDoubleClick} onContextMenu={handleContextMenu} onMouseLeave={handleMouseLeave} zoom={zoom}
           />
         </div>
-        <AnnotationToolbar currentTool={currentTool} onToolSelect={setCurrentTool} onZooomIncr={handleZoomIn} onZoomDecr={handleZoomOut} />
+        <AnnotationToolbar 
+          currentTool={currentTool} 
+          onToolSelect={setCurrentTool} 
+          onZoomIncr={handleZoomIn} 
+          onZoomDecr={handleZoomOut} 
+        />
       </div>
       {showPopup && <AnnotationPopup position={popupPosition} classes={classes} onSave={handleSaveAnnotation} onCancel={handleCancelAnnotation} />}
     </div>
