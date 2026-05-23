@@ -79,15 +79,18 @@
 
 .tooltip {
   position: fixed;
-  background-color: #333;
+  background-color: #2c3e50;
   color: white;
-  padding: 8px 12px;
+  padding: 10px 14px;
   border-radius: 6px;
-  font-size: 12px;
-  white-space: nowrap;
+  font-size: 13px;
+  max-width: 300px;
+  word-wrap: break-word;
+  white-space: normal;
   z-index: 1000;
   pointer-events: none;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  border: 1px solid #34495e;
 }
 
 .left-controls,
