@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { serializeFolders } from "../utils/fileSystem";
 import { saveCollections, loadCollections } from "../utils/persistence";
-import { deleteStoredDataset, getStoredDatasets, updateProjectOnBackend, scanFolderOnBackend, scanVideoFolderOnBackend, scanDatasetFolderOnBackend, getAllAnnotations, getImageUrl } from "../services/api";
+import { updateProjectOnBackend, scanFolderOnBackend, scanVideoFolderOnBackend, scanDatasetFolderOnBackend, getAllAnnotations, getImageUrl, syncAppendDataset } from "../services/api";
 
 const DEFAULT_TRAIN_SPLIT_PERCENT = 80;
 const DEFAULT_VAL_SPLIT_PERCENT = 10;
@@ -151,6 +151,32 @@ function useCollections() {
         const mergedChildren = mergeTrees(folderNode.children || [], scanResult.tree || []);
         updatedFolders.push({ ...folderNode, children: mergedChildren });
       }
+
+      // Авто-прокид новых файлов фото/видео-папки в train/val/test существующего датасета.
+      if (folderNode.folderType === "photos" || folderNode.folderType === "videos") {
+        const prefix = folderNode.path + "/";
+        const items = (scanResult.files || [])
+          .filter((f) => (f.type || "").startsWith("image/"))
+          .map((f) => {
+            const rp = f.relativePath || "";
+            const cleanPath = rp.startsWith(prefix) ? rp.substring(prefix.length) : (f.name || rp);
+            const it = { absolutePath: f.absolute_path || f.absolutePath, relativePath: cleanPath };
+            if (folderNode.folderType === "videos") it.videoGroup = cleanPath.split("/")[0];
+            return it;
+          });
+        try {
+          await syncAppendDataset({
+            workspacePath: collection.workspacePath,
+            datasetName: folderNode.name,
+            items,
+            trainPercent: collection.trainSplitPercent ?? 80,
+            valPercent: collection.valSplitPercent ?? 10,
+            testPercent: collection.testSplitPercent ?? 10,
+          });
+        } catch (err) {
+          console.error(`sync-append "${folderNode.name}":`, err);
+        }
+      }
     }
 
     const allAnnotations = collection.workspacePath
@@ -212,7 +238,7 @@ function useCollections() {
             const mergedChildren = mergeTrees(folderNode.children || [], scanResult.tree || []);
             updatedFolders.push({ ...folderNode, children: mergedChildren });
           }
-        } catch (error) {
+        } catch {
           updatedFolders.push(folderNode);
         }
       }

@@ -165,6 +165,15 @@ def scan_dataset_structure(root_path: str, virtual_root_name: str) -> Dict:
     splits = ["train", "val", "test"]
     has_split_structure = any((root / s / "images").is_dir() for s in splits)
 
+    # uuid_mapping связывает uuid файла с исходным путём (original_path) и videoGroup.
+    uuid_mapping = {}
+    mapping_file = root / "uuid_mapping.json"
+    if mapping_file.exists():
+        try:
+            uuid_mapping = json.loads(mapping_file.read_text(encoding="utf-8"))
+        except Exception:
+            uuid_mapping = {}
+
     def read_annotation(label_path: Path) -> str:
         try:
             return label_path.read_text(encoding="utf-8").strip()
@@ -178,6 +187,7 @@ def scan_dataset_structure(root_path: str, virtual_root_name: str) -> Dict:
             rel = img_path.relative_to(images_dir).as_posix()
             label_path = (labels_dir / rel).with_suffix(".txt")
             ext = img_path.suffix.lower().lstrip(".")
+            info = uuid_mapping.get(img_path.stem, {})
             files_list.append({
                 "name": img_path.name,
                 "absolute_path": str(img_path),
@@ -186,6 +196,8 @@ def scan_dataset_structure(root_path: str, virtual_root_name: str) -> Dict:
                 "type": f"image/{ext}",
                 "annotationText": read_annotation(label_path),
                 "split": split,
+                "originalPath": info.get("original_path"),
+                "videoGroup": info.get("videoGroup"),
             })
 
     tree = []
