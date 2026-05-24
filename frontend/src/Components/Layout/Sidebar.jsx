@@ -1,7 +1,7 @@
 import React from "react";
 import "../../styles/Layout.css";
 
-const FolderTree = ({ nodes, onToggle }) => {
+const FolderTree = ({ nodes, onToggle, onRemove }) => {
   if (!nodes || nodes.length === 0) return null;
 
   const checkAllEnabled = (node) => {
@@ -40,6 +40,16 @@ const FolderTree = ({ nodes, onToggle }) => {
               <span className={`folder-name ${!node.isEnabled ? "disabled" : ""}`}>
                 {node.name}
               </span>
+              {onRemove && (
+                <button
+                  type="button"
+                  className="folder-remove-btn"
+                  title={`Убрать "${node.name}" из проекта`}
+                  onClick={(event) => { event.stopPropagation(); onRemove(node.path); }}
+                >
+                  🗑
+                </button>
+              )}
             </div>
             {node.children && node.children.length > 0 && (
               <FolderTree nodes={node.children} onToggle={onToggle} />
@@ -61,6 +71,7 @@ function Sidebar({
   onAddVideoFolder,
   onAddDatasetFolder,
   onToggleFolder,
+  onRemoveFolder,
 }) {
   const activeCollection = collections.find(c => c.id === currentCollectionId);
 
@@ -120,7 +131,7 @@ function Sidebar({
                     </button>
                   </div>
                   <div className="tree-container">
-                    <FolderTree nodes={activeCollection?.folders} onToggle={onToggleFolder} />
+                    <FolderTree nodes={activeCollection?.folders} onToggle={onToggleFolder} onRemove={onRemoveFolder} />
                   </div>
                 </div>
               )}

@@ -12,9 +12,9 @@ import yaml
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from core.paths import get_project_paths, ensure_project_directories
-from schemas.dataset_schema import ExportPayload, AutosavePayload, SaveVersionPayload, SwitchVersionPayload, ImportDatasetPayload
+from schemas.dataset_schema import ExportPayload, AutosavePayload, SaveVersionPayload, SwitchVersionPayload, ImportDatasetPayload, ResplitPayload, SyncAppendPayload
 from services import version_service
-from services.project_service import scan_dataset_structure
+from services.project_service import scan_dataset_structure, load_project_workspace
 from services.version_service import get_version_stats
 
 router = APIRouter(prefix="/api/datasets", tags=["Datasets"])
@@ -135,24 +135,52 @@ def _build_split_plan(items: list[dict[str, Any]], train_percent: int, val_perce
 
     sorted_items = sorted(normalized_items, key=lambda entry: entry["normalizedRelativePath"].lower())
     total_items = len(sorted_items)
-    
-    if total_items <= 1: 
+
+    if total_items <= 1:
         return [{**item, "split": "train"} for item in sorted_items]
 
-    train_count = int(round(total_items * (train_percent / 100)))
-    val_count = int(round(total_items * (val_percent / 100)))
-    
-    if train_count == 0 and train_percent > 0: train_count = 1
-    if val_count == 0 and val_percent > 0 and total_items > train_count: val_count = 1
+    # Группировка: кадры одного видео (videoGroup) — в один сплит; обычная картинка = группа из себя.
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for item in sorted_items:
+        group_key = item.get("videoGroup") or item["normalizedRelativePath"]
+        groups.setdefault(group_key, []).append(item)
 
-    for index, item in enumerate(sorted_items):
-        if index < train_count:
-            item["split"] = "train"
-        elif index < train_count + val_count:
-            item["split"] = "val"
-        else:
-            item["split"] = "test"
-            
+    sorted_groups = sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0].lower()))
+
+    targets = {
+        "train": total_items * (train_percent / 100),
+        "val": total_items * (val_percent / 100),
+        "test": total_items * (max(0, 100 - train_percent - val_percent) / 100),
+    }
+    assigned = {"train": 0, "val": 0, "test": 0}
+
+    # Целую группу — в сплит с наибольшим текущим дефицитом до целевого числа кадров.
+    for _group_key, group_items in sorted_groups:
+        group_size = len(group_items)
+        split_name = max(("train", "val", "test"), key=lambda s: targets[s] - assigned[s])
+        for item in group_items:
+            item["split"] = split_name
+        assigned[split_name] += group_size
+
+    # Гарантия непустого train (и непустого val при val% > 0) без дробления групп.
+    if assigned["train"] == 0:
+        donor = max(("val", "test"), key=lambda s: assigned[s])
+        for item in sorted_items:
+            if item["split"] == donor:
+                target_group = item.get("videoGroup") or item["normalizedRelativePath"]
+                for moved in sorted_items:
+                    if (moved.get("videoGroup") or moved["normalizedRelativePath"]) == target_group:
+                        moved["split"] = "train"
+                break
+
+    if val_percent > 0 and assigned["val"] == 0 and assigned["train"] > 0:
+        train_groups = {item.get("videoGroup") or item["normalizedRelativePath"] for item in sorted_items if item["split"] == "train"}
+        if len(train_groups) > 1:
+            move_group = sorted(train_groups)[-1]
+            for item in sorted_items:
+                if (item.get("videoGroup") or item["normalizedRelativePath"]) == move_group:
+                    item["split"] = "val"
+
     return sorted_items
 
 
@@ -182,7 +210,14 @@ def switch_version(payload: SwitchVersionPayload):
         raise HTTPException(status_code=400, detail="version_id обязателен")
     try:
         metadata = version_service.switch_version(payload.workspace_path or "", payload.version_id)
-        return {"status": "success", "version": metadata}
+        # Возвращаем восстановленный project.yaml (+ аннотации), чтобы фронт пересобрал
+        # папки/сплит/классы под выбранную версию.
+        project = None
+        try:
+            project = load_project_workspace(payload.workspace_path or "")
+        except Exception:
+            project = None
+        return {"status": "success", "version": metadata, "project": project}
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
@@ -269,25 +304,49 @@ def scan_workspace_datasets(workspace_path: str = Query(None)):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+def _write_or_remove_label(txt_path: Path, content: str) -> None:
+    txt_path.parent.mkdir(parents=True, exist_ok=True)
+    if content.strip():
+        txt_path.write_text(content, encoding="utf-8")
+    elif txt_path.exists():
+        txt_path.unlink()
+
+
+def _sync_classes_to_datasets(datasets_dir: Path, classes: list[str]) -> None:
+    if not datasets_dir.is_dir():
+        return
+    for ds in datasets_dir.iterdir():
+        if not ds.is_dir():
+            continue
+        (ds / "classes.txt").write_text("\n".join(classes) + "\n", encoding="utf-8")
+        yaml_file = ds / "dataset.yaml"
+        if yaml_file.is_file():
+            test_images = ds / "test" / "images"
+            has_test = test_images.is_dir() and any(test_images.iterdir())
+            _write_dataset_yaml(str(yaml_file), classes, str(ds.resolve()), has_test)
+
+
 @router.post("/autosave")
 async def autosave_annotation(payload: AutosavePayload):
-    if payload.image_abs_path and payload.workspace_path and os.path.exists(payload.workspace_path):
-        autosave_dir = Path(get_project_paths(payload.workspace_path)["autosave"])
-        if payload.relative_path:
-            rel = Path(payload.relative_path).with_suffix(".txt")
-            txt_path = autosave_dir / rel
-        else:
-            txt_path = autosave_dir / f"{Path(payload.image_abs_path).stem}.txt"
-        txt_path.parent.mkdir(parents=True, exist_ok=True)
-        if payload.content.strip():
-            txt_path.write_text(payload.content, encoding="utf-8")
-        elif txt_path.exists():
-            txt_path.unlink()
+    if not (payload.workspace_path and os.path.exists(payload.workspace_path)):
+        return {"status": "success"}
 
-    if payload.workspace_path and os.path.exists(payload.workspace_path):
-        classes_path = Path(payload.workspace_path) / "classes.txt"
-        if payload.classes:
-            classes_path.write_text("\n".join(payload.classes) + "\n", encoding="utf-8")
+    paths = get_project_paths(payload.workspace_path)
+    datasets_dir = Path(paths["datasets"]).resolve()
+
+    if payload.image_abs_path:
+        img_path = Path(payload.image_abs_path).resolve()
+        if datasets_dir in img_path.parents and img_path.parent.name == "images":
+            txt_path = img_path.parent.parent / "labels" / f"{img_path.stem}.txt"
+        elif payload.relative_path:
+            txt_path = Path(paths["autosave"]) / Path(payload.relative_path).with_suffix(".txt")
+        else:
+            txt_path = Path(paths["autosave"]) / f"{img_path.stem}.txt"
+        _write_or_remove_label(txt_path, payload.content)
+
+    if payload.classes:
+        (Path(payload.workspace_path) / "classes.txt").write_text("\n".join(payload.classes) + "\n", encoding="utf-8")
+        _sync_classes_to_datasets(datasets_dir, payload.classes)
 
     return {"status": "success"}
 
@@ -412,7 +471,7 @@ async def export_dataset(payload: ExportPayload):
                 label_file.write(annotation_txt)
                 if annotation_txt: label_file.write("\n")
 
-            uuid_mapping[file_uuid] = {"original_path": item.get("relativePath") or item.get("absolutePath"), "split": split_name}
+            uuid_mapping[file_uuid] = {"original_path": item.get("relativePath") or item.get("absolutePath"), "split": split_name, "videoGroup": item.get("videoGroup")}
             images_saved += 1
             split_counts[split_name] += 1
 
@@ -436,6 +495,221 @@ async def export_dataset(payload: ExportPayload):
     except Exception as exc:
         if dataset_dir.is_dir(): shutil.rmtree(dataset_dir, ignore_errors=True)
         raise HTTPException(status_code=500, detail=f"Не удалось экспортировать датасет: {exc}") from exc
+
+
+def _collect_resplit_entries(dataset_dir: Path) -> list[dict[str, Any]]:
+    """Собирает картинки датасета (и пути их меток) из всех существующих сплитов / flat,
+    подмешивая videoGroup из uuid_mapping.json."""
+    mapping_file = dataset_dir / "uuid_mapping.json"
+    uuid_mapping = {}
+    if mapping_file.exists():
+        try:
+            uuid_mapping = json.loads(mapping_file.read_text(encoding="utf-8"))
+        except Exception:
+            uuid_mapping = {}
+
+    search_dirs = [(dataset_dir / s / "images", dataset_dir / s / "labels") for s in ("train", "val", "test")]
+    search_dirs.append((dataset_dir / "images", dataset_dir / "labels"))
+
+    entries = []
+    seen = set()
+    for images_dir, labels_dir in search_dirs:
+        if not images_dir.is_dir():
+            continue
+        for img in sorted(images_dir.iterdir()):
+            if not img.is_file() or img.suffix.lower() not in IMAGE_EXTENSIONS:
+                continue
+            uid = img.stem
+            if uid in seen:
+                continue
+            seen.add(uid)
+            info = uuid_mapping.get(uid, {})
+            entries.append({
+                "relativePath": info.get("original_path") or uid,
+                "videoGroup": info.get("videoGroup"),
+                "_uuid": uid, "_ext": img.suffix,
+                "_image_path": img, "_label_path": labels_dir / f"{uid}.txt",
+            })
+    return entries
+
+
+@router.post("/resplit-preview")
+def resplit_preview(payload: ResplitPayload):
+    """Возвращает реальные split_counts для заданных % без перемещения файлов
+    (учитывает группировку кадров видео через videoGroup)."""
+    dataset_dir = Path(get_project_paths(payload.workspace_path)["datasets"]) / _sanitize_dataset_name(payload.dataset_name)
+    if not dataset_dir.is_dir():
+        return {"split_counts": {"train": 0, "val": 0, "test": 0}}
+    entries = _collect_resplit_entries(dataset_dir)
+    if not entries:
+        return {"split_counts": {"train": 0, "val": 0, "test": 0}}
+    split_plan = _build_split_plan(entries, payload.trainPercent, payload.valPercent)
+    counts = {"train": 0, "val": 0, "test": 0}
+    for item in split_plan:
+        counts[item["split"]] += 1
+    return {"split_counts": counts}
+
+
+@router.post("/sync-append")
+def sync_append(payload: SyncAppendPayload):
+    """Инкрементально доводит датасет до текущего состава исходной папки:
+    новые файлы раскидывает по train/val/test (видео — целой группой, с учётом %),
+    исчезнувшие удаляет. Существующие файлы и их разметку не трогает.
+    Если датасета ещё нет — пропускает (его создаст обычный экспорт при импорте)."""
+    dataset_dir = Path(get_project_paths(payload.workspace_path)["datasets"]) / _sanitize_dataset_name(payload.dataset_name)
+    mapping_file = dataset_dir / "uuid_mapping.json"
+    if not dataset_dir.is_dir() or not mapping_file.exists():
+        return {"status": "skipped", "reason": "no_dataset", "added": 0, "removed": 0}
+
+    try:
+        uuid_mapping = json.loads(mapping_file.read_text(encoding="utf-8"))
+    except Exception:
+        uuid_mapping = {}
+
+    split_dirs = {s: (dataset_dir / s / "images", dataset_dir / s / "labels") for s in ("train", "val", "test")}
+    all_dirs = list(split_dirs.values()) + [(dataset_dir / "images", dataset_dir / "labels")]
+
+    def _remove_uuid(uid: str) -> None:
+        for images_dir, labels_dir in all_dirs:
+            if images_dir.is_dir():
+                for img in images_dir.glob(f"{uid}.*"):
+                    img.unlink(missing_ok=True)
+            lbl = labels_dir / f"{uid}.txt"
+            lbl.unlink(missing_ok=True)
+
+    # original_path -> uuid (что уже есть в датасете)
+    existing = {info.get("original_path"): uid for uid, info in uuid_mapping.items() if info.get("original_path")}
+    current_paths = {it.get("relativePath") for it in payload.items if it.get("relativePath")}
+
+    # Удаляем исчезнувшие из исходной папки
+    removed = 0
+    for orig_path, uid in list(existing.items()):
+        if orig_path not in current_paths:
+            _remove_uuid(uid)
+            uuid_mapping.pop(uid, None)
+            removed += 1
+
+    new_items = [it for it in payload.items if it.get("relativePath") and it["relativePath"] not in existing]
+
+    assigned = {"train": 0, "val": 0, "test": 0}
+    for info in uuid_mapping.values():
+        if info.get("split") in assigned:
+            assigned[info["split"]] += 1
+
+    added = 0
+    if new_items:
+        for paths in split_dirs.values():
+            paths[0].mkdir(parents=True, exist_ok=True)
+            paths[1].mkdir(parents=True, exist_ok=True)
+
+        groups: dict[str, list[dict]] = {}
+        for it in new_items:
+            key = it.get("videoGroup") or it["relativePath"]
+            groups.setdefault(key, []).append(it)
+        sorted_groups = sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0].lower()))
+
+        total_after = sum(assigned.values()) + len(new_items)
+        tp, vp = payload.trainPercent, payload.valPercent
+        targets = {
+            "train": total_after * (tp / 100),
+            "val": total_after * (vp / 100),
+            "test": total_after * (max(0, 100 - tp - vp) / 100),
+        }
+
+        for _key, grp in sorted_groups:
+            split_name = max(("train", "val", "test"), key=lambda s: targets[s] - assigned[s])
+            images_dir, labels_dir = split_dirs[split_name]
+            for it in grp:
+                src = it.get("absolutePath")
+                if not src or not os.path.exists(src):
+                    continue
+                file_uuid = str(uuid.uuid4())
+                ext = Path(src).suffix.lower() or ".jpg"
+                shutil.copy2(src, (images_dir / f"{file_uuid}{ext}").resolve())
+                annotation_txt = (it.get("annotationTxt") or "").strip()
+                with open(labels_dir / f"{file_uuid}.txt", "w", encoding="utf-8") as lf:
+                    lf.write(annotation_txt)
+                    if annotation_txt:
+                        lf.write("\n")
+                uuid_mapping[file_uuid] = {"original_path": it["relativePath"], "split": split_name, "videoGroup": it.get("videoGroup")}
+                assigned[split_name] += 1
+                added += 1
+
+    mapping_file.write_text(json.dumps(uuid_mapping, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    classes = []
+    classes_file = dataset_dir / "classes.txt"
+    if classes_file.exists():
+        classes = [line.strip() for line in classes_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+    _write_dataset_yaml(str(dataset_dir / "dataset.yaml"), classes, str(dataset_dir.resolve()), assigned["test"] > 0)
+
+    return {"status": "success", "added": added, "removed": removed, "split_counts": assigned}
+
+
+@router.post("/resplit")
+def resplit_dataset(payload: ResplitPayload):
+    """Перераспределяет уже существующий датасет по train/val/test без потери разметки.
+
+    Картинки и метки только перемещаются между папками сплитов (не копируются заново),
+    кадры одного видео остаются в одном сплите (по videoGroup из uuid_mapping.json).
+    """
+    project_paths = get_project_paths(payload.workspace_path)
+    dataset_dir = Path(project_paths["datasets"]) / _sanitize_dataset_name(payload.dataset_name)
+    if not dataset_dir.is_dir():
+        raise HTTPException(status_code=404, detail="Датасет не найден")
+
+    mapping_file = dataset_dir / "uuid_mapping.json"
+    entries = _collect_resplit_entries(dataset_dir)
+
+    if not entries:
+        raise HTTPException(status_code=400, detail="В датасете нет изображений для перераспределения")
+
+    split_plan = _build_split_plan(entries, payload.trainPercent, payload.valPercent)
+
+    split_dirs = {
+        split_name: {"images": dataset_dir / split_name / "images", "labels": dataset_dir / split_name / "labels"}
+        for split_name in ("train", "val", "test")
+    }
+    for paths in split_dirs.values():
+        paths["images"].mkdir(parents=True, exist_ok=True)
+        paths["labels"].mkdir(parents=True, exist_ok=True)
+
+    split_counts = {"train": 0, "val": 0, "test": 0}
+    new_mapping = {}
+
+    try:
+        for item in split_plan:
+            split_name = item["split"]
+            uid = item["_uuid"]
+            dst_img = split_dirs[split_name]["images"] / f"{uid}{item['_ext']}"
+            dst_lbl = split_dirs[split_name]["labels"] / f"{uid}.txt"
+            src_img = item["_image_path"]
+            src_lbl = item["_label_path"]
+
+            if src_img.resolve() != dst_img.resolve():
+                shutil.move(str(src_img), str(dst_img))
+            if src_lbl.exists() and src_lbl.resolve() != dst_lbl.resolve():
+                shutil.move(str(src_lbl), str(dst_lbl))
+
+            new_mapping[uid] = {"original_path": item.get("relativePath"), "split": split_name, "videoGroup": item.get("videoGroup")}
+            split_counts[split_name] += 1
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Не удалось перераспределить датасет: {exc}") from exc
+
+    # Убираем опустевшие flat-папки, если датасет раньше был без сплита.
+    for leftover in (dataset_dir / "images", dataset_dir / "labels"):
+        if leftover.is_dir() and not any(leftover.iterdir()):
+            shutil.rmtree(leftover, ignore_errors=True)
+
+    mapping_file.write_text(json.dumps(new_mapping, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    classes = []
+    classes_file = dataset_dir / "classes.txt"
+    if classes_file.exists():
+        classes = [line.strip() for line in classes_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+    _write_dataset_yaml(str(dataset_dir / "dataset.yaml"), classes, str(dataset_dir.resolve()), split_counts["test"] > 0)
+
+    return {"status": "success", "dataset_name": dataset_dir.name, "split_counts": split_counts}
 
 
 @router.get("")
@@ -466,6 +740,25 @@ def delete_workspace_datasets(workspace_path: str = Query(None)):
     datasets_dir = get_project_paths(workspace_path)["datasets"]
     if os.path.isdir(datasets_dir): shutil.rmtree(datasets_dir, ignore_errors=True)
     return {"status": "success", "message": "Данные воркспейса очищены"}
+
+@router.delete("/remove/{dataset_name}")
+def delete_single_dataset(dataset_name: str, workspace_path: str = Query(None)):
+    paths = get_project_paths(workspace_path)
+    safe = _sanitize_dataset_name(dataset_name)
+
+    datasets_dir = Path(paths["datasets"])
+    target = (datasets_dir / safe).resolve()
+    if not str(target).startswith(str(datasets_dir.resolve())):
+        raise HTTPException(status_code=400, detail="Некорректный путь")
+    if target.is_dir():
+        shutil.rmtree(target, ignore_errors=True)
+
+    frames_dir = Path(paths["frames"])
+    frames_target = (frames_dir / safe).resolve()
+    if str(frames_target).startswith(str(frames_dir.resolve())) and frames_target.is_dir():
+        shutil.rmtree(frames_target, ignore_errors=True)
+
+    return {"status": "success", "dataset_name": safe}
 
 @router.get("/files/{file_path:path}")
 def get_dataset_file(file_path: str, workspace_path: str = Query(None)):

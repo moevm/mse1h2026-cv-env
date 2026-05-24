@@ -79,6 +79,7 @@ function AugmentationView({
   const [currentIndex, setCurrentIndex] = useState(0);
   const [originalImage, setOriginalImage] = useState(null);
   const [augmentedImage, setAugmentedImage] = useState(null);
+  const [tooltip, setTooltip] = useState({ visible: false, text: '', x: 0, y: 0 });
 
   const [showNameInput, setShowNameInput] = useState(false);
   const [versionName, setVersionName] = useState("");
@@ -215,20 +216,102 @@ function AugmentationView({
 
       <div className="controls">
         <div className="left-controls">
-          <div className="control-item"><label>Hue (hsv_h)</label><input type="range" min="0" max="1" step="0.001" value={params.hsv_h} onChange={e => handleChange("hsv_h", e.target.value)} /><input type="number" min="0" max="1" step="0.001" value={params.hsv_h} onChange={e => handleNumberInputChange("hsv_h", e.target.value)} /></div>
-          <div className="control-item"><label>Saturation (hsv_s)</label><input type="range" min="0" max="1" step="0.01" value={params.hsv_s} onChange={e => handleChange("hsv_s", e.target.value)} /><input type="number" min="0" max="1" step="0.01" value={params.hsv_s} onChange={e => handleNumberInputChange("hsv_s", e.target.value)} /></div>
-          <div className="control-item"><label>Brightness (hsv_v)</label><input type="range" min="0" max="1" step="0.01" value={params.hsv_v} onChange={e => handleChange("hsv_v", e.target.value)} /><input type="number" min="0" max="1" step="0.01" value={params.hsv_v} onChange={e => handleNumberInputChange("hsv_v", e.target.value)} /></div>
-          <div className="control-item"><label>Rotation (degrees)</label><input type="range" min="-180" max="180" value={params.degrees} onChange={e => handleChange("degrees", e.target.value)} /><input type="number" min="-180" max="180" step="1" value={params.degrees} onChange={e => handleNumberInputChange("degrees", e.target.value)} /></div>
-          <div className="control-item"><label>Translate</label><input type="range" min="0" max="1" step="0.01" value={params.translate} onChange={e => handleChange("translate", e.target.value)} /><input type="number" min="0" max="1" step="0.01" value={params.translate} onChange={e => handleNumberInputChange("translate", e.target.value)} /></div>
-          <div className="control-item"><label>Scale</label><input type="range" min="0" max="1" step="0.01" value={params.scale} onChange={e => handleChange("scale", e.target.value)} /><input type="number" min="0" max="1" step="0.01" value={params.scale} onChange={e => handleNumberInputChange("scale", e.target.value)} /></div>
+          <div className="control-item">
+            <label>Hue (hsv_h) 
+              <span onMouseEnter={(e) => setTooltip({ visible: true, text: 'Изменяет цветовой тон изображения, сохраняя взаимосвязи цветов. Параметр hsv_h определяет величину сдвига, итоговое значение случайно выбирается в диапазоне от -hsv_h до hsv_h.', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false, text: '', x: 0, y: 0 })}>?</span>
+            </label>
+            <input type="range" min="0" max="1" step="0.001" value={params.hsv_h} onChange={e => handleChange("hsv_h", e.target.value)} />
+            <input type="number" min="0" max="1" step="0.001" value={params.hsv_h} onChange={e => handleNumberInputChange("hsv_h", e.target.value)} />
+          </div>
+
+          <div className="control-item">
+            <label>Saturation (hsv_s) 
+              <span onMouseEnter={(e) => setTooltip({ visible: true, text: 'Изменяет насыщенность цветов изображения. Параметр hsv_s определяет величину сдвига, итоговое значение случайно выбирается в диапазоне от -hsv_s до hsv_s.', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false, text: '', x: 0, y: 0 })}>?</span>
+            </label>
+            <input type="range" min="0" max="1" step="0.01" value={params.hsv_s} onChange={e => handleChange("hsv_s", e.target.value)} />
+            <input type="number" min="0" max="1" step="0.01" value={params.hsv_s} onChange={e => handleNumberInputChange("hsv_s", e.target.value)} />
+          </div>
+
+          <div className="control-item">
+            <label>Brightness (hsv_v) 
+              <span onMouseEnter={(e) => setTooltip({ visible: true, text: 'Изменяет яркость изображения. Параметр hsv_v определяет величину сдвига, итоговое значение случайно выбирается в диапазоне от -hsv_v до hsv_v.', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false, text: '', x: 0, y: 0 })}>?</span>
+            </label>
+            <input type="range" min="0" max="1" step="0.01" value={params.hsv_v} onChange={e => handleChange("hsv_v", e.target.value)} />
+            <input type="number" min="0" max="1" step="0.01" value={params.hsv_v} onChange={e => handleNumberInputChange("hsv_v", e.target.value)} />
+          </div>
+
+          <div className="control-item">
+            <label>Rotation (degrees) 
+              <span onMouseEnter={(e) => setTooltip({ visible: true, text: 'Поворачивает изображения на случайный угол в заданном диапазоне. Параметр degrees определяет угол поворота, итоговое значение случайно выбирается в диапазоне от -degrees до degrees.', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false, text: '', x: 0, y: 0 })}>?</span>
+            </label>
+            <input type="range" min="-180" max="180" value={params.degrees} onChange={e => handleChange("degrees", e.target.value)} />
+            <input type="number" min="-180" max="180" step="1" value={params.degrees} onChange={e => handleNumberInputChange("degrees", e.target.value)} />
+          </div>
+
+          <div className="control-item">
+            <label>Translate 
+              <span onMouseEnter={(e) => setTooltip({ visible: true, text: 'Сдвигает изображения по горизонтали и вертикали на случайную долю от размера изображения. Параметр translate определяет величину сдвига, итоговое значение дважды (по одному разу для каждой оси) случайно выбирается в диапазоне от -translate до translate.', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false, text: '', x: 0, y: 0 })}>?</span>
+            </label>
+            <input type="range" min="0" max="1" step="0.01" value={params.translate} onChange={e => handleChange("translate", e.target.value)} />
+            <input type="number" min="0" max="1" step="0.01" value={params.translate} onChange={e => handleNumberInputChange("translate", e.target.value)} />
+          </div>
+
+          <div className="control-item">
+            <label>Scale 
+              <span onMouseEnter={(e) => setTooltip({ visible: true, text: 'Изменяет размер изображений на случайный коэффициент в заданном диапазоне. Параметр scale определяет коэффициент масштабирования, итоговое значение случайно выбирается в диапазоне от 1-scale до 1+scale.', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false, text: '', x: 0, y: 0 })}>?</span>
+            </label>
+            <input type="range" min="0" max="1" step="0.01" value={params.scale} onChange={e => handleChange("scale", e.target.value)} />
+            <input type="number" min="0" max="1" step="0.01" value={params.scale} onChange={e => handleNumberInputChange("scale", e.target.value)} />
+          </div>
         </div>
         <div className="right-controls">
-          <div className="control-item"><label>Shear</label><input type="range" min="-180" max="180" value={params.shear} onChange={e => handleChange("shear", e.target.value)} /><input type="number" min="-180" max="180" step="1" value={params.shear} onChange={e => handleNumberInputChange("shear", e.target.value)} /></div>
-          <div className="control-item"><label>Perspective</label><input type="range" min="0" max="0.001" step="0.0001" value={params.perspective} onChange={e => handleChange("perspective", e.target.value)} /><input type="number" min="0" max="0.001" step="0.0001" value={params.perspective} onChange={e => handleNumberInputChange("perspective", e.target.value)} /></div>
-          <div className="control-item"><label>Flip Vertical</label><input type="range" min="0" max="1" step="0.1" value={params.flipud} onChange={e => handleChange("flipud", e.target.value)} /><input type="number" min="0" max="1" step="0.1" value={params.flipud} onChange={e => handleNumberInputChange("flipud", e.target.value)} /></div>
-          <div className="control-item"><label>Flip Horizontal</label><input type="range" min="0" max="1" step="0.1" value={params.fliplr} onChange={e => handleChange("fliplr", e.target.value)} /><input type="number" min="0" max="1" step="0.1" value={params.fliplr} onChange={e => handleNumberInputChange("fliplr", e.target.value)} /></div>
-          <div className="control-item"><label>Mosaic</label><input type="range" min="0" max="1" step="0.1" value={params.mosaic} onChange={e => handleChange("mosaic", e.target.value)} /><input type="number" min="0" max="1" step="0.1" value={params.mosaic} onChange={e => handleNumberInputChange("mosaic", e.target.value)} /></div>
-          <div className="control-item"><label>Mixup</label><input type="range" min="0" max="1" step="0.1" value={params.mixup} onChange={e => handleChange("mixup", e.target.value)} /><input type="number" min="0" max="1" step="0.1" value={params.mixup} onChange={e => handleNumberInputChange("mixup", e.target.value)} /></div>
+          <div className="control-item">
+            <label>Shear 
+              <span onMouseEnter={(e) => setTooltip({ visible: true, text: 'Применяет геометрическое преобразование «наклон», которое искажает изображение вдоль осей X и Y, сдвигая части изображения в одном направлении при сохранении параллельности линий. Параметр shear определяет угол наклона, итоговое значение случайно выбирается в диапазоне от -shear до shear.', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false, text: '', x: 0, y: 0 })}>?</span>
+            </label>
+            <input type="range" min="-180" max="180" value={params.shear} onChange={e => handleChange("shear", e.target.value)} />
+            <input type="number" min="-180" max="180" step="1" value={params.shear} onChange={e => handleNumberInputChange("shear", e.target.value)} />
+          </div>
+
+          <div className="control-item">
+            <label>Perspective 
+              <span onMouseEnter={(e) => setTooltip({ visible: true, text: 'Применяет полноценное перспективное преобразование вдоль осей X и Y, имитируя то, как объекты выглядят при просмотре с разной глубины или под разными углами. Параметр perspective определяет величину перспективного искажения, итоговое значение случайно выбирается в диапазоне от -perspective до perspective.', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false, text: '', x: 0, y: 0 })}>?</span>
+            </label>
+            <input type="range" min="0" max="0.001" step="0.0001" value={params.perspective} onChange={e => handleChange("perspective", e.target.value)} />
+            <input type="number" min="0" max="0.001" step="0.0001" value={params.perspective} onChange={e => handleNumberInputChange("perspective", e.target.value)} />
+          </div>
+
+          <div className="control-item">
+            <label>Flip Vertical 
+              <span onMouseEnter={(e) => setTooltip({ visible: true, text: 'Параметр flipud определяет вероятность вертикального отражения (переворота сверху вниз). Значение flipud=1.0 гарантирует, что все изображения будут отражены, а значение flipud=0.0 полностью отключает преобразование.', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false, text: '', x: 0, y: 0 })}>?</span>
+            </label>
+            <input type="range" min="0" max="1" step="0.1" value={params.flipud} onChange={e => handleChange("flipud", e.target.value)} />
+            <input type="number" min="0" max="1" step="0.1" value={params.flipud} onChange={e => handleNumberInputChange("flipud", e.target.value)} />
+          </div>
+
+          <div className="control-item">
+            <label>Flip Horizontal 
+              <span onMouseEnter={(e) => setTooltip({ visible: true, text: 'Определяет вероятность горизонтального отражения (переворота слева направо). Значение fliplr=1.0 гарантирует, что все изображения будут отражены, а значение fliplr=0.0 полностью отключает преобразование.', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false, text: '', x: 0, y: 0 })}>?</span>
+            </label>
+            <input type="range" min="0" max="1" step="0.1" value={params.fliplr} onChange={e => handleChange("fliplr", e.target.value)} />
+            <input type="number" min="0" max="1" step="0.1" value={params.fliplr} onChange={e => handleNumberInputChange("fliplr", e.target.value)} />
+          </div>
+
+          <div className="control-item">
+            <label>Mosaic 
+              <span onMouseEnter={(e) => setTooltip({ visible: true, text: 'Объединяет четыре обучающих изображения в одно. Параметр mosaic определяет вероятность применения преобразования. Значение mosaic=1.0 гарантирует, что все изображения будут объединены, а mosaic=0.0 полностью отключает преобразование.', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false, text: '', x: 0, y: 0 })}>?</span>
+            </label>
+            <input type="range" min="0" max="1" step="0.1" value={params.mosaic} onChange={e => handleChange("mosaic", e.target.value)} />
+            <input type="number" min="0" max="1" step="0.1" value={params.mosaic} onChange={e => handleNumberInputChange("mosaic", e.target.value)} />
+          </div>
+
+          <div className="control-item">
+            <label>Mixup 
+              <span onMouseEnter={(e) => setTooltip({ visible: true, text: 'Смешивает два изображения и их метки с заданной вероятностью. Параметр mixup определяет вероятность применения преобразования. Значение mixup=1.0 гарантирует, что все изображения будут смешаны, а mixup=0.0 полностью отключает преобразование.', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false, text: '', x: 0, y: 0 })}>?</span>
+            </label>
+            <input type="range" min="0" max="1" step="0.1" value={params.mixup} onChange={e => handleChange("mixup", e.target.value)} />
+            <input type="number" min="0" max="1" step="0.1" value={params.mixup} onChange={e => handleNumberInputChange("mixup", e.target.value)} />
+          </div>
         </div>
       </div>
 
@@ -276,6 +359,11 @@ function AugmentationView({
       <div className="buttons">
         <button className="apply-all-btn" onClick={handleApply}>Apply to All</button>
       </div>
+      {tooltip.visible && (
+        <div className="tooltip" style={{ left: tooltip.x + 10, top: tooltip.y + 10 }}>
+          {tooltip.text}
+        </div>
+      )}
     </div>
   );
 }

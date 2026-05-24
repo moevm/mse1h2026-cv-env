@@ -7,11 +7,22 @@ import { annotationToYoloLine } from "../../utils/yolo";
 import { autosaveAnnotation } from "../../services/api";
 import "../../styles/AnnotationView.css";
 
-function ImageAnnotator({ imageUrl, imageId, imageName, imageAbsPath, imageRelativePath, workspacePath, onClose, annotationsManager, onSaveAnnotation }) {
+function ImageAnnotator({ 
+  imageUrl, 
+  imageId, 
+  imageName, 
+  imageAbsPath, 
+  imageRelativePath, 
+  workspacePath, 
+  onClose, 
+  annotationsManager, 
+  onSaveAnnotation,
+  currentTool,      
+  setCurrentTool
+}) {
   const { annotations, classes, addAnnotation, addClass, updateAnnotation, deleteAnnotation, getClassColor } = annotationsManager;
 
   const [isDrawing, setIsDrawing] = useState(false);
-  const [currentTool, setCurrentTool] = useState(null);
   const [startPoint, setStartPoint] = useState(null);
   const [currentRect, setCurrentRect] = useState(null);
   const [currentPolygon, setCurrentPolygon] = useState([]);
@@ -26,7 +37,6 @@ function ImageAnnotator({ imageUrl, imageId, imageName, imageAbsPath, imageRelat
 
   const currentImageAnnotations = useMemo(() => annotations.filter((a) => a.imageId === imageId), [annotations, imageId]);
 
-  // 1. Создаем хранилище для самых свежих данных (чтобы не пересоздавать таймер)
   const latestProps = useRef({ classes, imageAbsPath, imageRelativePath, workspacePath, imageUrl, imageId, onSaveAnnotation });
   useEffect(() => {
     latestProps.current = { classes, imageAbsPath, imageRelativePath, workspacePath, imageUrl, imageId, onSaveAnnotation };
@@ -35,7 +45,6 @@ function ImageAnnotator({ imageUrl, imageId, imageName, imageAbsPath, imageRelat
   const isInitialMount = useRef(true);
   const prevAnnotationsRef = useRef(null);
 
-  // 2. Таймер теперь реагирует ТОЛЬКО на изменение самих боксов
   useEffect(() => {
     if (isInitialMount.current) {
       isInitialMount.current = false;
@@ -55,12 +64,11 @@ function ImageAnnotator({ imageUrl, imageId, imageName, imageAbsPath, imageRelat
       });
     }
 
-    if (isSame) return; // Если боксы не менялись - ничего не делаем, таймер не сбрасывается!
+    if (isSame) return;
     prevAnnotationsRef.current = currentImageAnnotations;
 
     const timer = setTimeout(async () => {
       try {
-        // Достаем самые актуальные данные прямо перед сохранением
         const { classes: latestClasses, imageAbsPath: latestPath, imageRelativePath: latestRelPath, workspacePath: latestWs, imageUrl: latestUrl, imageId: latestId, onSaveAnnotation: latestOnSave } = latestProps.current;
         
         if (!latestPath || !latestWs) return;
@@ -93,7 +101,7 @@ function ImageAnnotator({ imageUrl, imageId, imageName, imageAbsPath, imageRelat
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [currentImageAnnotations]); // УБРАЛИ ВСЕ ЛИШНИЕ ЗАВИСИМОСТИ!
+  }, [currentImageAnnotations]);
 
   const findAnnotationAtPoint = useCallback((point) => {
       for (let i = currentImageAnnotations.length - 1; i >= 0; i--) {
@@ -195,8 +203,11 @@ function ImageAnnotator({ imageUrl, imageId, imageName, imageAbsPath, imageRelat
   }, [isDrawing, currentTool]);
 
   useEffect(() => {
-    setCurrentRect(null); setCurrentPolygon([]); setIsDrawing(false); setSelectedForEdit(null);
-  }, [currentTool]);
+    setCurrentRect(null);
+    setCurrentPolygon([]);
+    setIsDrawing(false);
+    setSelectedForEdit(null);
+  }, [currentTool, imageId]);
 
   const handleSaveAnnotation = useCallback(async (classId, newClassName = null) => {
       try {
@@ -210,8 +221,38 @@ function ImageAnnotator({ imageUrl, imageId, imageName, imageAbsPath, imageRelat
     }, [selectedAnnotation, addClass, addAnnotation]);
 
   const handleCancelAnnotation = useCallback(() => { setShowPopup(false); setSelectedAnnotation(null); }, []);
-  const handleZoomIn = useCallback(() => setZoom((prev) => Math.min(prev + 0.1, 3)), []);
-  const handleZoomOut = useCallback(() => setZoom((prev) => Math.max(prev - 0.1, 0.5)), []);
+  
+  const handleZoomIn = useCallback(() => {
+    const container = document.querySelector(".canvas-container");
+    if (container) {
+      const oldZoom = zoom;
+      const newZoom = Math.min(zoom + 0.2, 4);
+      const scale = newZoom / oldZoom;
+      
+      const centerX = container.clientWidth / 2;
+      const centerY = container.clientHeight / 2;
+      container.scrollLeft = (container.scrollLeft + centerX) * scale - centerX;
+      container.scrollTop = (container.scrollTop + centerY) * scale - centerY;
+      
+      setZoom(newZoom);
+    }
+  }, [zoom]);
+
+  const handleZoomOut = useCallback(() => {
+    const container = document.querySelector(".canvas-container");
+    if (container) {
+      const oldZoom = zoom;
+      const newZoom = Math.max(zoom - 0.2, 0.4);
+      const scale = newZoom / oldZoom;
+      
+      const centerX = container.clientWidth / 2;
+      const centerY = container.clientHeight / 2;
+      container.scrollLeft = (container.scrollLeft + centerX) * scale - centerX;
+      container.scrollTop = (container.scrollTop + centerY) * scale - centerY;
+      
+      setZoom(newZoom);
+    }
+  }, [zoom]);
 
   return (
     <div className="image-annotator">
@@ -223,10 +264,17 @@ function ImageAnnotator({ imageUrl, imageId, imageName, imageAbsPath, imageRelat
             selectedForEdit={selectedForEdit} currentRect={currentRect} currentPolygon={currentPolygon}
             currentTool={currentTool} mousePosition={mousePosition} onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onClick={handleClick}
-            onDoubleClick={handleDoubleClick} onContextMenu={handleContextMenu} onMouseLeave={handleMouseLeave} zoom={zoom}
+            onDoubleClick={handleDoubleClick} onContextMenu={handleContextMenu} onMouseLeave={handleMouseLeave} 
+            zoom={zoom}
+            setZoom={setZoom} 
           />
         </div>
-        <AnnotationToolbar currentTool={currentTool} onToolSelect={setCurrentTool} onZooomIncr={handleZoomIn} onZoomDecr={handleZoomOut} />
+        <AnnotationToolbar 
+          currentTool={currentTool} 
+          onToolSelect={setCurrentTool} 
+          onZoomIncr={handleZoomIn} 
+          onZoomDecr={handleZoomOut} 
+        />
       </div>
       {showPopup && <AnnotationPopup position={popupPosition} classes={classes} onSave={handleSaveAnnotation} onCancel={handleCancelAnnotation} />}
     </div>

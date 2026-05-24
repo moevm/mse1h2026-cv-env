@@ -19,6 +19,16 @@ function TrainingView({ collection, currentVersionId }) {
   // --- Локальные состояния, не связанные с активными тренировками ---
   const [isLoading, setIsLoading] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
+  const [tooltip, setTooltip] = useState({ visible: false, text: '', x: 0, y: 0 });
+  const completedTasksRef = useRef(new Set());
+  const websocketsRef = useRef({});
+   const metricsPollsRef = useRef({}); // для хранения таймеров опроса метрик
+
+  // Словарь для хранения метрик по каждому активному обучению
+  const [metricsData, setMetricsData] = useState({});
+  const [metricsPanelOpen, setMetricsPanelOpen] = useState({});
+  const [metricsHistoryOpen, setMetricsHistoryOpen] = useState({});
+  
   const [params, setParams] = useState({
     model: "yolov8n",
     modelName: "",
@@ -249,6 +259,62 @@ function TrainingView({ collection, currentVersionId }) {
                 </table>
               </div>
             )}
+            <button
+              className="metrics-history-toggle-btn"
+              onClick={() => toggleMetricsHistory(training.taskId)}
+            >
+              {historyOpen ? 'Свернуть историю' : 'Показать историю'}
+            </button>
+
+          </div>
+          {historyOpen ? (
+            <div className="table-scroll compact">
+              <table className="metrics-table-full">
+                <thead>
+                  <tr>
+                    <th>Эпоха</th>
+                    <th>Train box <span className="tooltip-icon" onMouseEnter={(e) => setTooltip({ visible: true, text: 'Потери на обучающей выборке для bounding box', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false })}>?</span></th>
+                    <th>Train cls <span className="tooltip-icon" onMouseEnter={(e) => setTooltip({ visible: true, text: 'Потери на обучающей выборке для класса', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false })}>?</span></th>
+                    <th>Val box <span className="tooltip-icon" onMouseEnter={(e) => setTooltip({ visible: true, text: 'Потери на валидационной выборке для bounding box', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false })}>?</span></th>
+                    <th>Val cls <span className="tooltip-icon" onMouseEnter={(e) => setTooltip({ visible: true, text: 'Потери на валидационной выборке для класса', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false })}>?</span></th>
+                    <th>Precision <span className="tooltip-icon" onMouseEnter={(e) => setTooltip({ visible: true, text: 'Точность: TP / (TP + FP)', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false })}>?</span></th>
+                    <th>Recall <span className="tooltip-icon" onMouseEnter={(e) => setTooltip({ visible: true, text: 'Полнота: TP / (TP + FN)', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false })}>?</span></th>
+                    <th>mAP50 <span className="tooltip-icon" onMouseEnter={(e) => setTooltip({ visible: true, text: 'Средняя точность при IoU=0.5', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false })}>?</span></th>
+                    <th>mAP50-95 <span className="tooltip-icon" onMouseEnter={(e) => setTooltip({ visible: true, text: 'Средняя точность по IoU от 0.5 до 0.95 с шагом 0.05', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false })}>?</span></th>
+                    <th>F1 <span className="tooltip-icon" onMouseEnter={(e) => setTooltip({ visible: true, text: 'Гармоническое среднее precision и recall', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false })}>?</span></th>
+                    <th>LR <span className="tooltip-icon" onMouseEnter={(e) => setTooltip({ visible: true, text: 'Скорость обучения (learning rate)', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false })}>?</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {history.length === 0 ? (
+                    <tr><td colSpan="11" style={{ textAlign: 'center' }}>Нет данных</td></tr>
+                  ) : history.map((row, idx) => {
+                    const f1 = row.precision && row.recall && (row.precision + row.recall) > 0
+                      ? 2 * (row.precision * row.recall) / (row.precision + row.recall)
+                      : null;
+                    return (
+                      <tr key={idx} className={row.epoch === latest.epoch ? 'current-epoch' : ''}>
+                        <td>{row.epoch}</td>
+                        <td>{row['train/box_loss']?.toFixed(4) ?? '—'}</td>
+                        <td>{row['train/cls_loss']?.toFixed(4) ?? '—'}</td>
+                        <td>{row['val/box_loss']?.toFixed(4) ?? '—'}</td>
+                        <td>{row['val/cls_loss']?.toFixed(4) ?? '—'}</td>
+                        <td>{row.precision?.toFixed(4) ?? '—'}</td>
+                        <td>{row.recall?.toFixed(4) ?? '—'}</td>
+                        <td>{row.mAP50?.toFixed(4) ?? '—'}</td>
+                        <td>{row['mAP50-95']?.toFixed(4) ?? '—'}</td>
+                        <td>{f1?.toFixed(4) ?? '—'}</td>
+                        <td>{row.lr?.toExponential(2) ?? '—'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div>
+            </div>
+          )}
           </div>
         </div>
       </div>
@@ -435,25 +501,20 @@ function TrainingView({ collection, currentVersionId }) {
           <h3>Модель и базовые настройки</h3>
 
           <div className="param-group model-name-group">
-            <label>Имя модели:</label>
-            <input
-              type="text"
-              value={params.modelName}
-              onChange={(e) => setParams(prev => ({ ...prev, modelName: e.target.value }))}
-              placeholder="Название для новой модели"
-            />
+            <label>
+              Имя модели:
+              <span className="tooltip-icon" onMouseEnter={(e) => setTooltip({ visible: true, text: 'Произвольное имя для сохранения обученной модели. Если не указано, будет использовано имя базовой модели', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false })}>?</span>
+            </label>
+            <input type="text" value={params.modelName} onChange={(e) => handleChange("modelName", e.target.value)} placeholder="Название для новой модели (опционально)" />
           </div>
 
           <div className="model-group">
-            <label>Базовая модель:</label>
+            <label>
+              Базовая модель:
+              <span className="tooltip-icon" onMouseEnter={(e) => setTooltip({ visible: true, text: 'Архитектура модели YOLO (yolov8n, yolov8s, yolov8m, yolov8l, yolov8x, а также yolov5, yolov11 и др.)', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false })}>?</span>
+            </label>
             <div style={{ flex: 1 }}>
-              <input
-                type="text"
-                value={params.model}
-                onChange={(e) => setParams(prev => ({ ...prev, model: e.target.value }))}
-                placeholder="Например: yolov8n, yolov5s, yolov11x"
-                disabled={isValidating}
-              />
+              <input type="text" value={params.model} onChange={(e) => handleChange("model", e.target.value)} placeholder="Например: yolov8n, yolov5s, yolov11x" disabled={isValidating} />
             </div>
           </div>
 
@@ -465,20 +526,50 @@ function TrainingView({ collection, currentVersionId }) {
           )}
 
           <div className="param-group checkbox-group" style={{ marginTop: '10px', background: 'rgba(52, 152, 219, 0.1)', padding: '8px', borderRadius: '4px' }}>
-            <label style={{ color: '#3498db', fontWeight: 'bold' }}>COCO8:</label>
-            <input
-              type="checkbox"
-              checked={params.use_coco8}
-              onChange={(e) => setParams(prev => ({ ...prev, use_coco8: e.target.checked }))}
-            />
+            <label style={{ color: '#3498db', fontWeight: 'bold' }}>
+              COCO8:
+              <span className="tooltip-icon" onMouseEnter={(e) => setTooltip({ visible: true, text: 'Использовать встроенный датасет COCO8 (8 изображений) для быстрого тестирования. Игнорирует выбранные папки', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false })}>?</span>
+            </label>
+            <input type="checkbox" checked={params.use_coco8} onChange={(e) => handleChange("use_coco8", e.target.checked)} />
+          </div>
+          
+          <div className="param-group">
+            <label>
+              epochs:
+              <span 
+                className="tooltip-icon"
+                onMouseEnter={(e) => setTooltip({ visible: true, text: 'Количество эпох обучения. Одна эпоха = один проход по всем данным', x: e.clientX, y: e.clientY })}
+                onMouseLeave={() => setTooltip({ visible: false })}
+              >?</span>
+            </label>
+            <input type="number" value={params.epochs} onChange={(e) => handleChange("epochs", e.target.value)} />
+          </div>
+          
+          <div className="param-group">
+            <label>
+              batch:
+              <span className="tooltip-icon" onMouseEnter={(e) => setTooltip({ visible: true, text: 'Размер батча (количество изображений за одну итерацию). Влияет на скорость и потребление памяти', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false })}>?</span>
+            </label>
+            <input type="number" value={params.batch} onChange={(e) => handleChange("batch", e.target.value)} />
+          </div>
+          
+          <div className="param-group">
+            <label>
+              imgsz:
+              <span className="tooltip-icon" onMouseEnter={(e) => setTooltip({ visible: true, text: 'Размер входного изображения (пиксели). Изображения масштабируются до этого размера', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false })}>?</span>
+            </label>
+            <input type="number" value={params.imgsz} onChange={(e) => handleChange("imgsz", e.target.value)} />
           </div>
 
           <div className="param-group"><label>epochs:</label><input type="number" value={params.epochs} onChange={(e) => setParams(prev => ({ ...prev, epochs: e.target.value }))} /></div>
           <div className="param-group"><label>batch:</label><input type="number" value={params.batch} onChange={(e) => setParams(prev => ({ ...prev, batch: e.target.value }))} /></div>
           <div className="param-group"><label>imgsz:</label><input type="number" value={params.imgsz} onChange={(e) => setParams(prev => ({ ...prev, imgsz: e.target.value }))} /></div>
           <div className="param-group">
-            <label>device:</label>
-            <select value={params.device} onChange={(e) => setParams(prev => ({ ...prev, device: e.target.value }))}>
+            <label>
+              device:
+              <span className="tooltip-icon" onMouseEnter={(e) => setTooltip({ visible: true, text: 'Устройство для обучения: auto (автовыбор), cpu, 0 (первая GPU), 1 (вторая GPU), -1 (самая свободная GPU)', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false })}>?</span>
+            </label>
+            <select value={params.device} onChange={(e) => handleChange("device", e.target.value)}>
               <option value="auto">auto</option>
               <option value="cpu">CPU</option>
               <option value="0">GPU 0</option>
@@ -486,18 +577,65 @@ function TrainingView({ collection, currentVersionId }) {
               <option value="-1">Auto-select most idle GPU</option>
             </select>
           </div>
-          <div className="param-group"><label>workers:</label><input type="number" value={params.workers} onChange={(e) => setParams(prev => ({ ...prev, workers: e.target.value }))} /></div>
-          <div className="param-group"><label>patience:</label><input type="number" value={params.patience} onChange={(e) => setParams(prev => ({ ...prev, patience: e.target.value }))} /></div>
+          
+          <div className="param-group">
+            <label>
+              workers:
+              <span className="tooltip-icon" onMouseEnter={(e) => setTooltip({ visible: true, text: 'Количество подпроцессов для загрузки данных. Увеличение ускоряет загрузку, но требует больше RAM', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false })}>?</span>
+            </label>
+            <input type="number" value={params.workers} onChange={(e) => handleChange("workers", e.target.value)} />
+          </div>
+          
+          <div className="param-group">
+            <label>
+              patience:
+              <span className="tooltip-icon" onMouseEnter={(e) => setTooltip({ visible: true, text: 'Ранняя остановка: обучение прекратится, если метрика не улучшается столько эпох подряд', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false })}>?</span>
+            </label>
+            <input type="number" value={params.patience} onChange={(e) => handleChange("patience", e.target.value)} />
+          </div>
         </div>
 
         <div className="params-right">
           <h3>Расширенные настройки</h3>
-          <div className="param-group checkbox-group"><label>save:</label><input type="checkbox" checked={params.save} onChange={(e) => setParams(prev => ({ ...prev, save: e.target.checked }))} /></div>
-          <div className="param-group"><label>save_period:</label><input type="number" value={params.save_period} onChange={(e) => setParams(prev => ({ ...prev, save_period: e.target.value }))} /></div>
-          <div className="param-group checkbox-group"><label>cache:</label><input type="checkbox" checked={params.cache} onChange={(e) => setParams(prev => ({ ...prev, cache: e.target.checked }))} /></div>
+          
+          <div className="param-group checkbox-group">
+            <label>
+              save:
+              <span className="tooltip-icon" onMouseEnter={(e) => setTooltip({ visible: true, text: 'Сохранять контрольные точки (checkpoints) модели во время обучения', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false })}>?</span>
+            </label>
+            <input type="checkbox" checked={params.save} onChange={(e) => handleChange("save", e.target.checked)} />
+          </div>
+          
           <div className="param-group">
-            <label>optimizer:</label>
-            <select value={params.optimizer} onChange={(e) => setParams(prev => ({ ...prev, optimizer: e.target.value }))}>
+            <label>
+              save_period:
+              <span className="tooltip-icon" onMouseEnter={(e) => setTooltip({ visible: true, text: 'Период сохранения контрольных точек (в эпохах)', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false })}>?</span>
+            </label>
+            <input
+              type="number"
+              value={params.save_period}
+              onChange={(e) => handleChange("save_period", e.target.value)}
+            />
+          </div>
+          
+          <div className="param-group checkbox-group">
+            <label>
+              cache:
+              <span className="tooltip-icon" onMouseEnter={(e) => setTooltip({ visible: true, text: 'Кэшировать данные (cache data)', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false })}>?</span>
+            </label>
+            <input
+              type="checkbox"
+              checked={params.cache}
+              onChange={(e) => handleChange("cache", e.target.checked)}
+            />
+          </div>
+          
+          <div className="param-group">
+            <label>
+              optimizer:
+              <span className="tooltip-icon" onMouseEnter={(e) => setTooltip({ visible: true, text: 'Алгоритм оптимизации: SGD, Adam, AdamW, RMSProp и др.', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false })}>?</span>
+            </label>
+            <select value={params.optimizer} onChange={(e) => handleChange("optimizer", e.target.value)}>
               <option value="auto">auto</option>
               <option value="SGD">SGD</option>
               <option value="MuSGD">MuSGD</option>
@@ -509,13 +647,91 @@ function TrainingView({ collection, currentVersionId }) {
               <option value="RMSProp">RMSProp</option>
             </select>
           </div>
-          <div className="param-group"><label>lr0:</label><input type="number" step="0.001" value={params.lr0} onChange={(e) => setParams(prev => ({ ...prev, lr0: e.target.value }))} /></div>
-          <div className="param-group"><label>lrf:</label><input type="number" step="0.001" value={params.lrf} onChange={(e) => setParams(prev => ({ ...prev, lrf: e.target.value }))} /></div>
-          <div className="param-group"><label>momentum:</label><input type="number" step="0.001" value={params.momentum} onChange={(e) => setParams(prev => ({ ...prev, momentum: e.target.value }))} /></div>
-          <div className="param-group"><label>weight_decay:</label><input type="number" step="0.0001" value={params.weight_decay} onChange={(e) => setParams(prev => ({ ...prev, weight_decay: e.target.value }))} /></div>
-          <div className="param-group"><label>warmup_epochs:</label><input type="number" value={params.warmup_epochs} onChange={(e) => setParams(prev => ({ ...prev, warmup_epochs: e.target.value }))} /></div>
-          <div className="param-group"><label>warmup_momentum:</label><input type="number" step="0.01" value={params.warmup_momentum} onChange={(e) => setParams(prev => ({ ...prev, warmup_momentum: e.target.value }))} /></div>
-          <div className="param-group"><label>warmup_bias_lr:</label><input type="number" step="0.01" value={params.warmup_bias_lr} onChange={(e) => setParams(prev => ({ ...prev, warmup_bias_lr: e.target.value }))} /></div>
+          
+          <div className="param-group">
+            <label>
+              lr0:
+              <span className="tooltip-icon" onMouseEnter={(e) => setTooltip({ visible: true, text: 'Начальная скорость обучения (learning rate)', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false })}>?</span>
+            </label>
+            <input type="number" step="0.001" value={params.lr0} onChange={(e) => handleChange("lr0", e.target.value)} />
+          </div>
+          
+          <div className="param-group">
+            <label>
+              lrf:
+              <span className="tooltip-icon" onMouseEnter={(e) => setTooltip({ visible: true, text: 'Коэффициент финальной скорости обучения: lr_final = lr0 * lrf', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false })}>?</span>
+            </label>
+            <input
+              type="number"
+              step="0.001"
+              value={params.lrf}
+              onChange={(e) => handleChange("lrf", e.target.value)}
+            />
+          </div>
+          
+          <div className="param-group">
+            <label>
+              momentum:
+              <span className="tooltip-icon" onMouseEnter={(e) => setTooltip({ visible: true, text: 'Коэффициент импульса (momentum)', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false })}>?</span>
+            </label>
+            <input
+              type="number"
+              step="0.001"
+              value={params.momentum}
+              onChange={(e) => handleChange("momentum", e.target.value)}
+            />
+          </div>
+          
+          <div className="param-group">
+            <label>
+              weight_decay:
+              <span className="tooltip-icon" onMouseEnter={(e) => setTooltip({ visible: true, text: 'Коэффициент регуляризации (weight decay)', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false })}>?</span>
+            </label>
+            <input
+              type="number"
+              step="0.0001"
+              value={params.weight_decay}
+              onChange={(e) => handleChange("weight_decay", e.target.value)}
+            />
+          </div>
+          
+          <div className="param-group">
+            <label>
+              warmup_epochs:
+              <span className="tooltip-icon" onMouseEnter={(e) => setTooltip({ visible: true, text: 'Количество эпох разогрева (warmup epochs)', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false })}>?</span>
+            </label>
+            <input
+              type="number"
+              value={params.warmup_epochs}
+              onChange={(e) => handleChange("warmup_epochs", e.target.value)}
+            />
+          </div>
+          
+          <div className="param-group">
+            <label>
+              warmup_momentum:
+              <span className="tooltip-icon" onMouseEnter={(e) => setTooltip({ visible: true, text: 'Коэффициент импульса при разогреве (warmup momentum)', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false })}>?</span>
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              value={params.warmup_momentum}
+              onChange={(e) => handleChange("warmup_momentum", e.target.value)}
+            />
+          </div>
+          
+          <div className="param-group">
+            <label>
+              warmup_bias_lr:
+              <span className="tooltip-icon" onMouseEnter={(e) => setTooltip({ visible: true, text: 'Скорость обучения для.bias слоев при разогреве (warmup bias lr)', x: e.clientX, y: e.clientY })} onMouseLeave={() => setTooltip({ visible: false })}>?</span>
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              value={params.warmup_bias_lr}
+              onChange={(e) => handleChange("warmup_bias_lr", e.target.value)}
+            />
+          </div>
         </div>
       </div>
 
@@ -630,6 +846,11 @@ function TrainingView({ collection, currentVersionId }) {
         <button className="save-config-btn" onClick={handleSaveConfig} disabled={isLoading}>Save Configuration</button>
         <button className="start-training-btn" onClick={handleStartTraining} disabled={isLoading || isValidating}>Start Training</button>
       </div>
+        {tooltip.visible && (
+          <div className="tooltip" style={{ left: tooltip.x + 10, top: tooltip.y + 10 }}>
+            {tooltip.text}
+          </div>
+        )}
     </div>
   );
 }
