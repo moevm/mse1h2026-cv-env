@@ -1,5 +1,4 @@
 import React, { useState } from "react";
-import { Bar } from "react-chartjs-2";
 import { API_BASE_URL } from "../../services/api";
 
 const GRAPHIC_TYPES = [
@@ -31,59 +30,6 @@ const CompareModal = ({ experiments, onClose, collection }) => {
     return null;
   };
 
-  const barChartData = {
-    labels: experiments.map((exp) => exp.name),
-    datasets: [
-      {
-        label: "mAP50",
-        data: experiments.map((exp) => exp.map50 || 0),
-        backgroundColor: "rgba(54, 162, 235, 0.7)",
-        borderRadius: 4,
-      },
-      {
-        label: "Precision",
-        data: experiments.map((exp) => exp.precision || 0),
-        backgroundColor: "rgba(255, 99, 132, 0.7)",
-        borderRadius: 4,
-      },
-      {
-        label: "Recall",
-        data: experiments.map((exp) => exp.recall || 0),
-        backgroundColor: "rgba(75, 192, 192, 0.7)",
-        borderRadius: 4,
-      },
-      {
-        label: "F1 Score",
-        data: experiments.map((exp) => exp.f1 || 0),
-        backgroundColor: "rgba(153, 102, 255, 0.7)",
-        borderRadius: 4,
-      },
-    ],
-  };
-
-  const barOptions = {
-    responsive: true,
-    maintainAspectRatio: true,
-    scales: {
-      y: {
-        beginAtZero: true,
-        max: 1,
-        title: { display: true, text: "Score" },
-      },
-      x: {
-        title: { display: true, text: "Experiment" },
-      },
-    },
-    plugins: {
-      legend: { position: "top" },
-      tooltip: {
-        callbacks: {
-          label: (ctx) => `${ctx.dataset.label}: ${ctx.raw.toFixed(3)}`,
-        },
-      },
-    },
-  };
-
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="compare-modal" onClick={(e) => e.stopPropagation()}>
@@ -95,10 +41,55 @@ const CompareModal = ({ experiments, onClose, collection }) => {
         </div>
 
         <div className="compare-modal-content">
-          <h3>Основные метрики</h3>
-          <div className="bar-chart-section">
-            <Bar data={barChartData} options={barOptions} />
-          </div>
+
+		<h3>Сравнение метрик</h3>
+		<div className="metrics-table-container">
+		  <table className="compare-metrics-table">
+			<thead>
+			  <tr>
+				<th>Метрика</th>
+				{experiments.map((exp) => (
+				  <th key={exp.id}>{exp.name}</th>
+				))}
+			  </tr>
+			</thead>
+			<tbody>
+			  <tr>
+				<td className="metric-name">mAP50</td>
+				{experiments.map((exp) => (
+				  <td key={exp.id} className="metric-value">
+					{exp.map50?.toFixed(4) || "—"}
+				  </td>
+				))}
+			  </tr>
+			  <tr>
+				<td className="metric-name">mAP</td>
+				{experiments.map((exp) => (
+				  <td key={exp.id} className="metric-value">
+					{exp.map_?.toFixed(4) || "—"}
+				  </td>
+				))}
+			  </tr>
+			  <tr>
+				<td className="metric-name">Precision</td>
+				{experiments.map((exp) => (
+				  <td key={exp.id} className="metric-value">
+					{exp.precision?.toFixed(4) || "—"}
+				  </td>
+				))}
+			  </tr>
+			  <tr>
+				<td className="metric-name">Recall</td>
+				{experiments.map((exp) => (
+				  <td key={exp.id} className="metric-value">
+					{exp.recall?.toFixed(4) || "—"}
+				  </td>
+				))}
+			  </tr>
+			</tbody>
+		  </table>
+		</div>
+		
 
           {GRAPHIC_TYPES.map((type) => {
             const currentExpId = selectedExpPerType[type.key];

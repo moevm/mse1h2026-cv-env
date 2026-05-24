@@ -4,6 +4,10 @@ export const serializeFolders = (nodes) => {
     path: node.path,
     absolutePath: node.absolutePath,
     isEnabled: node.isEnabled,
+    // Сохраняем folderType/видео-поля, иначе при перечитывании project.yaml видео-папки теряют тип и сканируются как фото.
+    ...(node.folderType ? { folderType: node.folderType } : {}),
+    ...(node.framesDir ? { framesDir: node.framesDir } : {}),
+    ...(node.frameInterval != null ? { frameInterval: node.frameInterval } : {}),
     children: node.children ? serializeFolders(node.children) : []
   }));
 };

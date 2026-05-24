@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { serializeFolders } from "../utils/fileSystem";
 import { saveCollections, loadCollections } from "../utils/persistence";
-import { deleteStoredDataset, getStoredDatasets, updateProjectOnBackend, scanFolderOnBackend, scanVideoFolderOnBackend, scanDatasetFolderOnBackend, getAllAnnotations, getImageUrl } from "../services/api";
+import { updateProjectOnBackend, scanFolderOnBackend, scanVideoFolderOnBackend, scanDatasetFolderOnBackend, getAllAnnotations, getImageUrl, syncAppendDataset } from "../services/api";
 
 const DEFAULT_TRAIN_SPLIT_PERCENT = 80;
 const DEFAULT_VAL_SPLIT_PERCENT = 10;
@@ -151,6 +151,32 @@ function useCollections() {
         const mergedChildren = mergeTrees(folderNode.children || [], scanResult.tree || []);
         updatedFolders.push({ ...folderNode, children: mergedChildren });
       }
+
+      // Авто-прокид новых файлов фото/видео-папки в train/val/test существующего датасета.
+      if (folderNode.folderType === "photos" || folderNode.folderType === "videos") {
+        const prefix = folderNode.path + "/";
+        const items = (scanResult.files || [])
+          .filter((f) => (f.type || "").startsWith("image/"))
+          .map((f) => {
+            const rp = f.relativePath || "";
+            const cleanPath = rp.startsWith(prefix) ? rp.substring(prefix.length) : (f.name || rp);
+            const it = { absolutePath: f.absolute_path || f.absolutePath, relativePath: cleanPath };
+            if (folderNode.folderType === "videos") it.videoGroup = cleanPath.split("/")[0];
+            return it;
+          });
+        try {
+          await syncAppendDataset({
+            workspacePath: collection.workspacePath,
+            datasetName: folderNode.name,
+            items,
+            trainPercent: collection.trainSplitPercent ?? 80,
+            valPercent: collection.valSplitPercent ?? 10,
+            testPercent: collection.testSplitPercent ?? 10,
+          });
+        } catch (err) {
+          console.error(`sync-append "${folderNode.name}":`, err);
+        }
+      }
     }
 
     const allAnnotations = collection.workspacePath
@@ -160,22 +186,29 @@ function useCollections() {
     setCollections((prev) => prev.map((c) => c.id === collectionId ? { ...c, images, imageCount: images.length, folders: updatedFolders, loadedAnnotations: allAnnotations } : c));
   };
 
+  const buildProjectPayload = (collection) => ({
+    id: collection.id,
+    name: collection.name,
+    created_at: collection.date,
+    path: collection.workspacePath,
+    folders: serializeFolders(collection.folders || []),
+    classes: collection.projectClasses || [],
+    train_split_percent: collection.trainSplitPercent || 80,
+    val_split_percent: collection.valSplitPercent || 10,
+    test_split_percent: collection.testSplitPercent || 10,
+  });
+
   const debounceSync = useCallback((collection) => {
     if (!collection.workspacePath) return;
-    // ПОЛНЫЙ PAYLOAD ДЛЯ YAML
-    const payload = {
-      id: collection.id, 
-      name: collection.name, 
-      created_at: collection.date, // Сохраняем дату
-      path: collection.workspacePath, 
-      folders: serializeFolders(collection.folders || []),
-      classes: collection.projectClasses || [], // Сохраняем классы
-      train_split_percent: collection.trainSplitPercent || 80, // Сохраняем сплит
-      val_split_percent: collection.valSplitPercent || 10,  // Изменено
-      test_split_percent: collection.testSplitPercent || 10 // Добавлено
-    };
-    updateProjectOnBackend(payload).catch(err => console.error("Ошибка фоновой синхронизации YAML:", err));
+    updateProjectOnBackend(buildProjectPayload(collection)).catch(err => console.error("Ошибка фоновой синхронизации YAML:", err));
   }, []);
+
+  // Немедленно (await) пишет project.yaml — нужно перед сохранением версии, чтобы снапшот захватил актуальные сплит/папки/классы.
+  const flushProjectConfig = async (collectionId) => {
+    const collection = collections.find((c) => c.id === collectionId);
+    if (!collection?.workspacePath) return;
+    await updateProjectOnBackend(buildProjectPayload(collection));
+  };
 
   useEffect(() => {
     if (isLoadingCollections || collections.length === 0) return;
@@ -212,7 +245,7 @@ function useCollections() {
             const mergedChildren = mergeTrees(folderNode.children || [], scanResult.tree || []);
             updatedFolders.push({ ...folderNode, children: mergedChildren });
           }
-        } catch (error) {
+        } catch {
           updatedFolders.push(folderNode);
         }
       }
@@ -243,7 +276,7 @@ function useCollections() {
     return newCollection.id;
   };
 
-  return { collections, isLoadingCollections, addCollection, removeCollection, updateCollection, getCollection, syncCollection, toggleFolderState, loadProject };
+  return { collections, isLoadingCollections, addCollection, removeCollection, updateCollection, getCollection, syncCollection, toggleFolderState, loadProject, flushProjectConfig };
 }
 
 export default useCollections;

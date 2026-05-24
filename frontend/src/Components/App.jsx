@@ -10,7 +10,39 @@ import TrainingView from "./Training/TrainingView";
 import ExperimentsView from "./Experiments/ExperimentsView";
 
 import useCollections from "../hooks/useCollections";
-import { pickWorkspacePath, scanFolderOnBackend, scanVideoFolderOnBackend, scanDatasetFolderOnBackend, importDatasetFolder, listDatasetVersions, saveDatasetVersion, switchDatasetVersion, deleteDatasetVersion, listAugVersions, saveAugVersion, switchAugVersion, deleteAugVersion } from "../services/api";
+import { pickWorkspacePath, scanFolderOnBackend, scanVideoFolderOnBackend, importDatasetFolder, exportDataset, listDatasetVersions, saveDatasetVersion, switchDatasetVersion, deleteDatasetVersion, listAugVersions, saveAugVersion, switchAugVersion, deleteAugVersion } from "../services/api";
+
+// Сразу сплитует только что импортированную папку (фото/видео) в datasets/.
+async function autoSplitImportedFolder(collection, folder, files) {
+  if (!files || files.length === 0) return;
+  const prefix = folder.path + "/";
+  const items = files
+    .filter((f) => (f.type || "").startsWith("image/"))
+    .map((f) => {
+      const rp = f.relativePath || "";
+      const cleanPath = rp.startsWith(prefix) ? rp.substring(prefix.length) : (f.name || rp);
+      const item = {
+        absolutePath: f.absolute_path || f.absolutePath,
+        relativePath: cleanPath,
+        annotationTxt: f.annotationText || "",
+      };
+      if (folder.folderType === "videos") item.videoGroup = cleanPath.split("/")[0];
+      return item;
+    });
+  if (items.length === 0) return;
+
+  await exportDataset({
+    collectionName: collection.name,
+    workspacePath: collection.workspacePath,
+    subFolderName: folder.name,
+    classes: collection.projectClasses || [],
+    items,
+    trainPercent: collection.trainSplitPercent ?? 80,
+    valPercent: collection.valSplitPercent ?? 10,
+    testPercent: collection.testSplitPercent ?? 10,
+    splitMode: "split",
+  });
+}
 
 import "../styles/App.css";
 
@@ -24,12 +56,14 @@ function App() {
     updateCollection,
     syncCollection,
     toggleFolderState,
-    loadProject
+    loadProject,
+    flushProjectConfig
   } = useCollections();
   
   const [currentCollectionId, setCurrentCollectionId] = useState(null);
   const [currentTab, setCurrentTab] = useState("dataset");
   const [showManagerModal, setShowManagerModal] = useState(false);
+  const [datasetRefreshSignal, setDatasetRefreshSignal] = useState(0);
 
   const [versions, setVersions] = useState([]);
   const [currentVersionId, setCurrentVersionId] = useState(null);
@@ -111,6 +145,13 @@ function App() {
       const updatedFolders = [...(currentCollection.folders || []), rootNode];
       updateCollection(currentCollectionId, { folders: updatedFolders });
       await syncCollection(currentCollectionId, updatedFolders);
+      try {
+        await autoSplitImportedFolder(currentCollection, rootNode, scanResult.files);
+      } catch (splitError) {
+        console.error("Авто-сплит при добавлении фото:", splitError);
+        alert("Папка добавлена, но не удалось разложить по train/val/test: " + splitError.message);
+      }
+      setDatasetRefreshSignal((s) => s + 1);
     } catch (error) {
       alert("Ошибка добавления папки с фото: " + error.message);
     }
@@ -139,6 +180,13 @@ function App() {
       const updatedFolders = [...(currentCollection.folders || []), rootNode];
       updateCollection(currentCollectionId, { folders: updatedFolders });
       await syncCollection(currentCollectionId, updatedFolders);
+      try {
+        await autoSplitImportedFolder(currentCollection, rootNode, scanResult.files);
+      } catch (splitError) {
+        console.error("Авто-сплит при добавлении видео:", splitError);
+        alert("Папка добавлена, но не удалось разложить по train/val/test: " + splitError.message);
+      }
+      setDatasetRefreshSignal((s) => s + 1);
     } catch (error) {
       alert("Ошибка обработки видео: " + error.message);
     }
@@ -176,9 +224,15 @@ function App() {
       }
       updateCollection(currentCollectionId, updates);
       await syncCollection(currentCollectionId, updatedFolders);
+      setDatasetRefreshSignal((s) => s + 1);
     } catch (error) {
       alert("Ошибка импорта датасета: " + error.message);
     }
+  }
+
+  async function handleSyncAndRefresh(collectionId) {
+    await syncCollection(collectionId);
+    setDatasetRefreshSignal((s) => s + 1);
   }
 
   function handleToggleFolder(path, isEnabled) {
@@ -199,6 +253,8 @@ function App() {
     if (!currentCollection) return;
     setVersionsLoading(true);
     try {
+      // Сбрасываем project.yaml на диск, чтобы версия захватила актуальные сплит/папки/классы.
+      await flushProjectConfig(currentCollectionId);
       const data = await saveDatasetVersion(currentCollection.workspacePath || "", name);
       const newVersion = data.version;
       setVersions(prev => [newVersion, ...prev]);
@@ -214,9 +270,15 @@ function App() {
     if (!currentCollection || versionId === currentVersionId) return;
     setVersionsLoading(true);
     try {
-      await switchDatasetVersion(currentCollection.workspacePath || "", versionId);
+      const data = await switchDatasetVersion(currentCollection.workspacePath || "", versionId);
       setCurrentVersionId(versionId);
-      await syncCollection(currentCollectionId);
+      // Пересобираем проект из восстановленного project.yaml версии (папки/сплит/классы),
+      // иначе в UI остаются текущие значения вместо версионных.
+      if (data?.project?.config) {
+        await loadProject(data.project);
+      } else {
+        await syncCollection(currentCollectionId);
+      }
     } catch (error) {
       alert("Ошибка переключения версии: " + error.message);
     } finally {
@@ -293,8 +355,8 @@ function App() {
     );
 
     switch (currentTab) {
-      case "dataset": return <DatasetView key={currentCollectionId} collection={currentCollection} versions={versions} currentVersionId={currentVersionId} versionsLoading={versionsLoading} onCreateVersion={handleCreateVersion} onSelectVersion={handleSelectVersion} onDeleteVersion={handleDeleteVersion} onUpdateSplit={()=>{}} onSync={syncCollection} />;
-      case "annotation": return <AnnotationView key={currentCollectionId} collection={currentCollection} versions={versions} currentVersionId={currentVersionId} onCollectionUpdate={updateCollection} />;
+      case "dataset": return <DatasetView key={currentCollectionId} collection={currentCollection} versions={versions} currentVersionId={currentVersionId} versionsLoading={versionsLoading} onCreateVersion={handleCreateVersion} onSelectVersion={handleSelectVersion} onDeleteVersion={handleDeleteVersion} onUpdateSplit={()=>{}} onSync={handleSyncAndRefresh} />;
+      case "annotation": return <AnnotationView key={currentCollectionId} collection={currentCollection} versions={versions} currentVersionId={currentVersionId} onCollectionUpdate={updateCollection} datasetRefreshSignal={datasetRefreshSignal} />;
       case "augmentation": return <AugmentationView key={currentCollectionId} collection={currentCollection} versions={versions} currentVersionId={currentVersionId} augVersions={augVersions} currentAugVersionId={currentAugVersionId} augVersionsLoading={augVersionsLoading} onCreateAugVersion={handleCreateAugVersion} onSelectAugVersion={handleSelectAugVersion} onDeleteAugVersion={handleDeleteAugVersion} />;
       case "training": return <TrainingView key={currentCollectionId} collection={currentCollection} currentVersionId={currentVersionId} />;
       case "experiments": return <ExperimentsView key={currentCollectionId} collection={currentCollection} />;

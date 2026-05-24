@@ -1,56 +1,24 @@
 import json
 import os
 import shutil
-import subprocess
-import sys
 import uuid
-import yaml
 from datetime import datetime
 from pathlib import Path
 
-from core.paths import STORAGE_DIR, get_project_paths
-
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-DEFAULT_DVC_FILE = os.path.join(STORAGE_DIR, "datasets.dvc")
+from core.paths import get_project_paths
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".tif", ".tiff"}
 
-
-def _run_dvc(args: list[str]) -> tuple[bool, str]:
-    try:
-        result = subprocess.run(
-            [sys.executable, "-m", "dvc"] + args,
-            cwd=PROJECT_ROOT,
-            capture_output=True, text=True, timeout=180
-        )
-        return result.returncode == 0, (result.stdout + result.stderr).strip()
-    except Exception as e:
-        return False, str(e)
+# Файлы в корне workspace, которые версионируем вместе с датасетом
+ROOT_FILES = ("project.yaml", "classes.txt")
 
 
-def _read_dvc_hash(dvc_file_path: str) -> str | None:
-    try:
-        with open(dvc_file_path, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-        outs = data.get("outs", [])
-        if outs:
-            return outs[0].get("md5") or outs[0].get("hash")
-    except Exception:
-        pass
-    return None
+def _versions_dir(workspace_path: str) -> Path:
+    return Path(get_project_paths(workspace_path)["storage"]) / ".dataset_versions"
 
 
-def _write_dvc_hash(dvc_file_path: str, md5_hash: str) -> bool:
-    try:
-        with open(dvc_file_path, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-        if data and "outs" in data and data["outs"]:
-            data["outs"][0]["md5"] = md5_hash
-        with open(dvc_file_path, "w", encoding="utf-8") as f:
-            yaml.safe_dump(data, f, sort_keys=False)
-        return True
-    except Exception:
-        return False
+def _snapshots_dir(workspace_path: str) -> Path:
+    return Path(get_project_paths(workspace_path)["storage"]) / "_snapshots"
 
 
 def _count_images(datasets_dir: str) -> int:
@@ -60,7 +28,6 @@ def _count_images(datasets_dir: str) -> int:
         return 0
     for img in root.rglob("*"):
         if img.is_file() and img.suffix.lower() in IMAGE_EXTENSIONS:
-            # exclude snapshot directories
             if "_snapshots" not in img.parts and ".dataset_versions" not in img.parts:
                 total += 1
     return total
@@ -89,69 +56,59 @@ def _collect_classes(datasets_dir: str) -> list[str]:
     return sorted(all_classes)
 
 
-def _is_default_workspace(workspace_path: str) -> bool:
-    paths = get_project_paths(workspace_path)
-    return os.path.normpath(paths["storage"]) == os.path.normpath(STORAGE_DIR)
+def _link_or_copy(src: Path, dst: Path) -> None:
+    """Картинки (большие, неизменяемые) — хардлинк без копирования байт.
+    Мелкие изменяемые файлы (labels/yaml/json/txt) — копия, чтобы правки на месте
+    не ломали уже сохранённые версии. Хардлинк недоступен (другой том) → копия."""
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    if src.suffix.lower() in IMAGE_EXTENSIONS:
+        try:
+            os.link(src, dst)
+            return
+        except OSError:
+            pass
+    shutil.copy2(src, dst)
 
 
-def _versions_dir(workspace_path: str) -> Path:
-    return Path(get_project_paths(workspace_path)["storage"]) / ".dataset_versions"
-
-
-def _snapshots_dir(workspace_path: str) -> Path:
-    return Path(get_project_paths(workspace_path)["storage"]) / "_snapshots"
-
-
-def _resolve(workspace_path: str) -> dict:
-    paths = get_project_paths(workspace_path)
-    datasets_dir = paths["datasets"]
-    if _is_default_workspace(workspace_path):
-        dvc_file = DEFAULT_DVC_FILE
-    else:
-        dvc_file = str(Path(datasets_dir).parent / "datasets.dvc")
-    return {"datasets_dir": datasets_dir, "dvc_file": dvc_file}
-
-
-def _copy_dir_if_exists(src: str, dst: str) -> None:
-    if os.path.exists(src):
-        shutil.copytree(src, dst, dirs_exist_ok=True)
+def _transfer_tree(src: Path, dst: Path) -> None:
+    """Переносит дерево src -> dst по правилам _link_or_copy (картинки линком, остальное копией)."""
+    if not src.exists():
+        return
+    for item in src.rglob("*"):
+        if item.is_file():
+            _link_or_copy(item, dst / item.relative_to(src))
 
 
 def save_version(workspace_path: str, name: str) -> dict:
     paths = get_project_paths(workspace_path)
-    resolved = _resolve(workspace_path)
-    datasets_dir = resolved["datasets_dir"]
-    autosave_dir = paths["autosave"]
-    dvc_file = resolved["dvc_file"]
+    root = Path(paths["storage"])
+    datasets_dir = Path(paths["datasets"])
+    autosave_dir = Path(paths["autosave"])
 
-    os.makedirs(datasets_dir, exist_ok=True)
+    datasets_dir.mkdir(parents=True, exist_ok=True)
 
     version_id = str(uuid.uuid4())
     _versions_dir(workspace_path).mkdir(parents=True, exist_ok=True)
 
-    # Считаем изображения: сначала в datasets/, потом в autosave/ если datasets пустой
-    image_count = _count_images(datasets_dir)
+    image_count = _count_images(str(datasets_dir))
     if image_count == 0:
-        image_count = _count_autosave_annotations(autosave_dir)
-    classes = _collect_classes(datasets_dir)
+        image_count = _count_autosave_annotations(str(autosave_dir))
+    classes = _collect_classes(str(datasets_dir))
 
-    storage_type = "snapshot"
-    dvc_md5 = None
+    snap = _snapshots_dir(workspace_path) / version_id
+    snap.mkdir(parents=True, exist_ok=True)
 
-    if _is_default_workspace(workspace_path):
-        rel_datasets = os.path.relpath(datasets_dir, PROJECT_ROOT)
-        ok, out = _run_dvc(["add", rel_datasets])
-        if ok:
-            dvc_md5 = _read_dvc_hash(dvc_file)
-            if dvc_md5:
-                storage_type = "dvc"
+    # Картинки — хардлинком (без копирования байт), мелочь — копией.
+    # Папку датасета создаём всегда (даже пустую), чтобы switch не падал.
+    (snap / "datasets").mkdir(parents=True, exist_ok=True)
+    _transfer_tree(datasets_dir, snap / "datasets")
+    _transfer_tree(autosave_dir, snap / "autosave")
 
-    # Всегда сохраняем снапшот autosave (разметка) + datasets если DVC не сработал
-    snap_path = _snapshots_dir(workspace_path) / version_id
-    snap_path.mkdir(parents=True, exist_ok=True)
-    if storage_type == "snapshot":
-        _copy_dir_if_exists(datasets_dir, str(snap_path / "datasets"))
-    _copy_dir_if_exists(autosave_dir, str(snap_path / "autosave"))
+    # project.yaml и classes.txt из корня workspace — чтобы переключение возвращало полное состояние
+    for fname in ROOT_FILES:
+        src = root / fname
+        if src.is_file():
+            shutil.copy2(src, snap / fname)
 
     metadata = {
         "id": version_id,
@@ -159,8 +116,7 @@ def save_version(workspace_path: str, name: str) -> dict:
         "created_at": datetime.now().isoformat(),
         "image_count": image_count,
         "classes": classes,
-        "storage_type": storage_type,
-        "dvc_md5": dvc_md5,
+        "storage_type": "snapshot",
     }
 
     meta_path = _versions_dir(workspace_path) / f"{version_id}.json"
@@ -186,47 +142,38 @@ def list_versions(workspace_path: str) -> list[dict]:
 def switch_version(workspace_path: str, version_id: str) -> dict:
     vdir = _versions_dir(workspace_path)
     meta_path = vdir / f"{version_id}.json"
-
     if not meta_path.exists():
         raise ValueError(f"Версия {version_id} не найдена")
 
     metadata = json.loads(meta_path.read_text(encoding="utf-8"))
     paths = get_project_paths(workspace_path)
-    resolved = _resolve(workspace_path)
-    datasets_dir = resolved["datasets_dir"]
-    autosave_dir = paths["autosave"]
-    snap_base = _snapshots_dir(workspace_path) / version_id
+    root = Path(paths["storage"])
+    datasets_dir = Path(paths["datasets"])
+    autosave_dir = Path(paths["autosave"])
+    snap = _snapshots_dir(workspace_path) / version_id
 
-    if metadata.get("storage_type") == "dvc":
-        dvc_md5 = metadata.get("dvc_md5")
-        if not dvc_md5:
-            raise ValueError("DVC хэш не сохранён для этой версии")
+    if not snap.exists():
+        raise ValueError(f"Снапшот для версии {version_id} не найден")
 
-        dvc_file = resolved["dvc_file"]
-        if not os.path.exists(dvc_file):
-            raise ValueError("DVC файл не найден")
+    # Восстанавливаем датасет (картинки — хардлинком из снапшота, мелочь — копией)
+    snap_datasets = snap / "datasets"
+    if datasets_dir.exists():
+        shutil.rmtree(datasets_dir)
+    datasets_dir.mkdir(parents=True, exist_ok=True)
+    _transfer_tree(snap_datasets, datasets_dir)
 
-        if not _write_dvc_hash(dvc_file, dvc_md5):
-            raise ValueError("Не удалось обновить DVC файл")
-
-        rel_dvc = os.path.relpath(dvc_file, PROJECT_ROOT)
-        ok, out = _run_dvc(["checkout", rel_dvc])
-        if not ok:
-            raise ValueError(f"DVC checkout завершился с ошибкой: {out}")
-    else:
-        snap_datasets = snap_base / "datasets"
-        if not snap_datasets.exists():
-            raise ValueError(f"Снапшот для версии {version_id} не найден")
-        if os.path.exists(datasets_dir):
-            shutil.rmtree(datasets_dir)
-        shutil.copytree(str(snap_datasets), datasets_dir)
-
-    # Восстанавливаем autosave (разметку) из снапшота если он есть
-    snap_autosave = snap_base / "autosave"
+    # Восстанавливаем разметку (autosave)
+    snap_autosave = snap / "autosave"
     if snap_autosave.exists():
-        if os.path.exists(autosave_dir):
+        if autosave_dir.exists():
             shutil.rmtree(autosave_dir)
-        shutil.copytree(str(snap_autosave), autosave_dir)
+        _transfer_tree(snap_autosave, autosave_dir)
+
+    # Восстанавливаем project.yaml и classes.txt
+    for fname in ROOT_FILES:
+        snap_file = snap / fname
+        if snap_file.is_file():
+            shutil.copy2(snap_file, root / fname)
 
     return metadata
 
@@ -236,14 +183,9 @@ def delete_version(workspace_path: str, version_id: str) -> bool:
     if not meta_path.exists():
         return False
 
-    try:
-        data = json.loads(meta_path.read_text(encoding="utf-8"))
-        if data.get("storage_type") == "snapshot":
-            snap = _snapshots_dir(workspace_path) / version_id
-            if snap.exists():
-                shutil.rmtree(snap)
-    except Exception:
-        pass
+    snap = _snapshots_dir(workspace_path) / version_id
+    if snap.exists():
+        shutil.rmtree(snap, ignore_errors=True)
 
     meta_path.unlink(missing_ok=True)
     return True
