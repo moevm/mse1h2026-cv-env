@@ -247,3 +247,92 @@ def delete_version(workspace_path: str, version_id: str) -> bool:
 
     meta_path.unlink(missing_ok=True)
     return True
+    
+def _parse_yolo_annotation(content: str) -> dict[int, int]:
+    counts = {}
+    for line in content.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split()
+        if not parts:
+            continue
+        try:
+            class_id = int(parts[0])
+            counts[class_id] = counts.get(class_id, 0) + 1
+        except ValueError:
+            continue
+    return counts
+    
+import logging
+logger = logging.getLogger(__name__)
+
+def get_version_stats(workspace_path: str, version_id: str) -> dict:
+    vdir = _versions_dir(workspace_path)
+    meta_path = vdir / f"{version_id}.json"
+    if not meta_path.exists():
+        raise ValueError(f"Версия {version_id} не найдена")
+
+    metadata = json.loads(meta_path.read_text(encoding="utf-8"))
+    if metadata.get("storage_type") != "snapshot":
+        raise ValueError("Статистика доступна только для snapshot-версий")
+
+    snap_base = _snapshots_dir(workspace_path) / version_id
+    if not snap_base.exists():
+        raise ValueError(f"Снапшот для версии {version_id} не найден")
+
+    datasets_dir = snap_base / "datasets"
+    autosave_dir = snap_base / "autosave"
+
+    total_images = 0
+    annotated_images = 0
+    class_counts_by_name: dict[str, int] = {}
+
+    def scan_dir_for_images_and_labels(root_dir: Path):
+        nonlocal total_images, annotated_images, class_counts_by_name
+
+        for images_dir in root_dir.rglob("images"):
+            if not images_dir.is_dir():
+                continue
+            labels_dir = images_dir.parent / "labels"
+            dataset_root = images_dir.parent.parent 
+            if not (dataset_root / "classes.txt").exists():
+                dataset_root = images_dir.parent   
+            classes_file = dataset_root / "classes.txt"
+            class_names = {}
+            if classes_file.exists():
+                lines = classes_file.read_text(encoding="utf-8").splitlines()
+                for idx, name in enumerate(lines):
+                    class_names[idx] = name.strip()
+
+            for ext in IMAGE_EXTENSIONS:
+                for img_path in images_dir.glob(f"*{ext}"):
+                    total_images += 1
+                    label_path = labels_dir / f"{img_path.stem}.txt"
+                    if label_path.exists():
+                        content = label_path.read_text(encoding="utf-8").strip()
+                        if content:
+                            annotated_images += 1
+                            for line in content.splitlines():
+                                parts = line.split()
+                                if not parts:
+                                    continue
+                                try:
+                                    class_id = int(parts[0])
+                                    class_name = class_names.get(class_id, f"class_{class_id}")
+                                    class_counts_by_name[class_name] = class_counts_by_name.get(class_name, 0) + 1
+                                except ValueError:
+                                    pass
+
+    if datasets_dir.exists():
+        scan_dir_for_images_and_labels(datasets_dir)
+
+    classes = sorted(class_counts_by_name.keys())
+    class_counts = {name: class_counts_by_name[name] for name in classes}
+    return {
+        "total_images": total_images,
+        "annotated_images": annotated_images,
+        "classes": classes,
+        "class_counts": class_counts,
+    }
+
