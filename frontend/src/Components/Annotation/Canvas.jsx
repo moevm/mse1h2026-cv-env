@@ -63,7 +63,7 @@ function Canvas({
   }, [imageUrl]);
 
   useEffect(() => {
-    updateCanvasDimensions();
+    redraw();
   }, [zoom]);
 
   const updateCanvasDimensions = () => {
@@ -71,8 +71,8 @@ function Canvas({
     const img = imageRef.current;
     if (!canvas || !img) return;
 
-    canvas.width = img.width * zoom;
-    canvas.height = img.height * zoom;
+    canvas.width = img.width;
+    canvas.height = img.height;
 
     redraw();
   };
@@ -96,7 +96,7 @@ function Canvas({
       const isSelected = selectedForEdit?.id === annotation.id;
 
       ctx.strokeStyle = color;
-      ctx.lineWidth = isSelected ? 5 : 3;
+      ctx.lineWidth = isSelected ? 5 / zoom : 3 / zoom; 
       ctx.fillStyle = color + "33";
 
       if (annotation.type === "rectangle") {
@@ -112,11 +112,11 @@ function Canvas({
         const classObj = classes.find((c) => c.id === annotation.classId);
         const className = annotation.className || (classObj ? classObj.name : "Unknown");
         ctx.fillStyle = color;
-        ctx.font = "bold 14px Arial";
+        ctx.font = `bold ${14 / zoom}px Arial`; // Адаптируем размер шрифта
         const textWidth = ctx.measureText(className).width;
-        ctx.fillRect(annotation.x, annotation.y - 25, textWidth + 10, 20);
+        ctx.fillRect(annotation.x, annotation.y - 25 / zoom, textWidth + 10 / zoom, 20 / zoom);
         ctx.fillStyle = "white";
-        ctx.fillText(className, annotation.x + 5, annotation.y - 10);
+        ctx.fillText(className, annotation.x + 5 / zoom, annotation.y - 10 / zoom);
       } else if (annotation.type === "polygon") {
         // Polygon
         ctx.beginPath();
@@ -139,24 +139,24 @@ function Canvas({
           { x: 0, y: 0 },
         );
         ctx.fillStyle = color;
-        ctx.font = "bold 14px Arial";
+        ctx.font = `bold ${14 / zoom}px Arial`;
         const textWidth = ctx.measureText(className).width;
         ctx.fillRect(
-          center.x - textWidth / 2 - 5,
-          center.y - 25,
-          textWidth + 10,
-          20,
+          center.x - textWidth / 2 - 5 / zoom,
+          center.y - 25 / zoom,
+          textWidth + 10 / zoom,
+          20 / zoom,
         );
         ctx.fillStyle = "white";
-        ctx.fillText(className, center.x - textWidth / 2, center.y - 10);
+        ctx.fillText(className, center.x - textWidth / 2, center.y - 10 / zoom);
       }
     });
 
     // drawing rectangle in process
     if (currentRect && currentTool === "rectangle") {
       ctx.strokeStyle = "#3498db";
-      ctx.lineWidth = 2;
-      ctx.setLineDash([5, 5]);
+      ctx.lineWidth = 2 / zoom;
+      ctx.setLineDash([5 / zoom, 5 / zoom]);
       ctx.strokeRect(
         currentRect.x,
         currentRect.y,
@@ -166,11 +166,10 @@ function Canvas({
       ctx.setLineDash([]);
     }
 
-    // drawing polygon in process
     if (currentPolygon.length > 0 && currentTool === "polygon") {
       ctx.strokeStyle = "#3498db";
-      ctx.lineWidth = 2;
-      ctx.setLineDash([5, 5]);
+      ctx.lineWidth = 2 / zoom;
+      ctx.setLineDash([5 / zoom, 5 / zoom]);
 
       if (currentPolygon.length > 1) {
         ctx.beginPath();
@@ -181,7 +180,6 @@ function Canvas({
         ctx.stroke();
       }
 
-      // draw line to cursosr
       if (mousePosition && currentPolygon.length > 0) {
         ctx.beginPath();
         ctx.moveTo(
@@ -196,14 +194,14 @@ function Canvas({
       ctx.fillStyle = "#3498db";
       currentPolygon.forEach((point) => {
         ctx.beginPath();
-        ctx.arc(point.x, point.y, 4, 0, 2 * Math.PI);
+        ctx.arc(point.x, point.y, 4 / zoom, 0, 2 * Math.PI);
         ctx.fill();
       });
 
       if (currentPolygon.length >= 3) {
         ctx.fillStyle = "#27ae60";
         ctx.beginPath();
-        ctx.arc(currentPolygon[0].x, currentPolygon[0].y, 6, 0, 2 * Math.PI);
+        ctx.arc(currentPolygon[0].x, currentPolygon[0].y, 6 / zoom, 0, 2 * Math.PI);
         ctx.fill();
       }
 
@@ -227,14 +225,16 @@ function Canvas({
 
   const getCanvasCoordinates = (e) => {
     const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    
     const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    const canvasX = (e.clientX - rect.left) * scaleX;
-    const canvasY = (e.clientY - rect.top) * scaleY;
+    
+    const canvasX = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const canvasY = (e.clientY - rect.top) * (canvas.height / rect.height);
+    
     return {
-      x: canvasX / zoom,
-      y: canvasY / zoom,
+      x: canvasX,
+      y: canvasY,
     };
   };
 
@@ -275,6 +275,9 @@ function Canvas({
     return "default";
   };
 
+  const displayWidth = imageRef.current ? imageRef.current.width * zoom : "auto";
+  const displayHeight = imageRef.current ? imageRef.current.height * zoom : "auto";
+
   return (
     <canvas
       ref={canvasRef}
@@ -288,6 +291,8 @@ function Canvas({
       style={{
         display: "block",
         cursor: getCursor(),
+        width: displayWidth,
+        height: displayHeight,
       }}
     />
   );

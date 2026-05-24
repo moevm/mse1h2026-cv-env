@@ -30,3 +30,18 @@ class ImportDatasetPayload(BaseModel):
     source_path: str
     dataset_name: str
     workspace_path: str = ""
+
+class ResplitPayload(BaseModel):
+    workspace_path: str = ""
+    dataset_name: str
+    trainPercent: int = 80
+    valPercent: int = 10
+    testPercent: int = 10
+
+class SyncAppendPayload(BaseModel):
+    workspace_path: str = ""
+    dataset_name: str
+    items: list[dict] = []
+    trainPercent: int = 80
+    valPercent: int = 10
+    testPercent: int = 10

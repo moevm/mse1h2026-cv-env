@@ -74,6 +74,7 @@ function ExperimentsView({ collection }) {
   const [availableModels, setAvailableModels] = useState([]);
   const [availableDatasets, setAvailableDatasets] = useState([]);
   const [isPolling, setIsPolling] = useState(false);
+  const [tooltip, setTooltip] = useState({ visible: false, text: '', x: 0, y: 0 });
 
   if (!collection) {
     return (
@@ -267,11 +268,31 @@ function ExperimentsView({ collection }) {
               <th>Выбрать</th>
               <th>Название</th>
               <th>Модель</th>
-              <th>mAP50</th>
-              <th>mAP</th>
-              <th>Precision</th>
-              <th>Recall</th>
-              <th>🏆 Score</th>
+              <th>mAP50
+                <span className="tooltip-icon"
+                  onMouseEnter={(e) => setTooltip({ visible: true, text: 'Mean Average Precision при IoU=0.5', x: e.clientX, y: e.clientY })}
+                  onMouseLeave={() => setTooltip({ visible: false })}>?</span>
+              </th>
+              <th>mAP
+                <span className="tooltip-icon"
+                  onMouseEnter={(e) => setTooltip({ visible: true, text: 'Mean Average Precision (0.5:0.95)', x: e.clientX, y: e.clientY })}
+                  onMouseLeave={() => setTooltip({ visible: false })}>?</span>
+              </th>
+              <th>Precision
+                <span className="tooltip-icon"
+                  onMouseEnter={(e) => setTooltip({ visible: true, text: 'Точность: TP/(TP+FP)', x: e.clientX, y: e.clientY })}
+                  onMouseLeave={() => setTooltip({ visible: false })}>?</span>
+              </th>
+              <th>Recall
+                <span className="tooltip-icon"
+                  onMouseEnter={(e) => setTooltip({ visible: true, text: 'Полнота: TP/(TP+FN)', x: e.clientX, y: e.clientY })}
+                  onMouseLeave={() => setTooltip({ visible: false })}>?</span>
+              </th>
+              <th>🏆 Score
+                <span className="tooltip-icon"
+                  onMouseEnter={(e) => setTooltip({ visible: true, text: 'Сумма mAP50, mAP, Precision и Recall', x: e.clientX, y: e.clientY })}
+                  onMouseLeave={() => setTooltip({ visible: false })}>?</span>
+              </th>
               <th>Статус</th>
               <th></th>
             </tr>
@@ -343,6 +364,11 @@ function ExperimentsView({ collection }) {
           onClose={() => setShowCompareModal(false)}
           collection={collection}
         />
+      )}
+      {tooltip.visible && (
+        <div className="tooltip" style={{ left: tooltip.x + 10, top: tooltip.y + 10 }}>
+          {tooltip.text}
+        </div>
       )}
     </div>
   );

@@ -4,6 +4,19 @@ const buildQuery = (value, key = "workspace_path") => {
   return value ? `?${key}=${encodeURIComponent(value)}` : "";
 };
 
+// Превращает тело ошибки FastAPI в читаемую строку (detail бывает строкой, списком 422 или объектом).
+const errorMessage = async (res, fallback) => {
+  const data = await res.json().catch(() => null);
+  const detail = data?.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const parts = detail.map((e) => (e?.msg ? `${(e.loc || []).join(".")}: ${e.msg}` : JSON.stringify(e)));
+    return parts.join("; ") || fallback;
+  }
+  if (detail) return JSON.stringify(detail);
+  return fallback;
+};
+
 export const scanFolderOnBackend = async (path, virtualName) => {
   const res = await fetch(`${API_BASE_URL}/api/projects/scan-folder?path=${encodeURIComponent(path)}&virtual_name=${encodeURIComponent(virtualName)}`);
   if (!res.ok) throw new Error("Ошибка сканирования папки");
@@ -19,8 +32,7 @@ export const scanVideoFolderOnBackend = async (path, virtualName, workspacePath,
   });
   const res = await fetch(`${API_BASE_URL}/api/video/scan-folder?${params}`);
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Ошибка обработки видео");
+    throw new Error(await errorMessage(res, "Ошибка обработки видео"));
   }
   return await res.json();
 };
@@ -30,8 +42,7 @@ export const scanDatasetFolderOnBackend = async (path, virtualName) => {
     `${API_BASE_URL}/api/projects/scan-folder-dataset?path=${encodeURIComponent(path)}&virtual_name=${encodeURIComponent(virtualName)}`
   );
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Ошибка сканирования датасета");
+    throw new Error(await errorMessage(res, "Ошибка сканирования датасета"));
   }
   return await res.json();
 };
@@ -235,6 +246,7 @@ export const exportDataset = async ({ collectionName, workspacePath, subFolderNa
       absolutePath: item.absolutePath,
       relativePath: item.relativePath,
       annotationTxt: item.annotationTxt,
+      ...(item.videoGroup ? { videoGroup: item.videoGroup } : {}),
     })),
   };
 
@@ -243,15 +255,77 @@ export const exportDataset = async ({ collectionName, workspacePath, subFolderNa
   });
 
   if (!res.ok) {
-    const error = await res.json().catch(() => ({}));
-    throw new Error(error.detail || "Ошибка экспорта датасета");
+    throw new Error(await errorMessage(res, "Ошибка экспорта датасета"));
   }
+  return await res.json();
+};
+
+export const deleteDatasetByName = async (workspacePath, datasetName) => {
+  const res = await fetch(`${API_BASE_URL}/api/datasets/remove/${encodeURIComponent(datasetName)}${buildQuery(workspacePath)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(await errorMessage(res, "Ошибка удаления папки из проекта"));
   return await res.json();
 };
 
 export const deleteStoredDataset = async (workspacePath) => {
   const res = await fetch(`${API_BASE_URL}/api/datasets/clear${buildQuery(workspacePath)}`, { method: "DELETE" });
   if (!res.ok) throw new Error("Ошибка удаления данных");
+  return await res.json();
+};
+
+export const resplitPreview = async ({ workspacePath, datasetName, trainPercent, valPercent, testPercent }) => {
+  const res = await fetch(`${API_BASE_URL}/api/datasets/resplit-preview`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      workspace_path: workspacePath || "",
+      dataset_name: datasetName,
+      trainPercent,
+      valPercent,
+      testPercent,
+    }),
+  });
+  if (!res.ok) throw new Error("Ошибка предпросмотра сплита");
+  return await res.json();
+};
+
+export const syncAppendDataset = async ({ workspacePath, datasetName, items, trainPercent, valPercent, testPercent }) => {
+  const res = await fetch(`${API_BASE_URL}/api/datasets/sync-append`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      workspace_path: workspacePath || "",
+      dataset_name: datasetName,
+      items: items.map((it) => ({
+        absolutePath: it.absolutePath,
+        relativePath: it.relativePath,
+        ...(it.videoGroup ? { videoGroup: it.videoGroup } : {}),
+      })),
+      trainPercent,
+      valPercent,
+      testPercent,
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(await errorMessage(res, "Ошибка синхронизации датасета"));
+  }
+  return await res.json();
+};
+
+export const resplitDataset = async ({ workspacePath, datasetName, trainPercent, valPercent, testPercent }) => {
+  const res = await fetch(`${API_BASE_URL}/api/datasets/resplit`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      workspace_path: workspacePath || "",
+      dataset_name: datasetName,
+      trainPercent,
+      valPercent,
+      testPercent,
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(await errorMessage(res, "Ошибка перераспределения датасета"));
+  }
   return await res.json();
 };
 
