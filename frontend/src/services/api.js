@@ -402,3 +402,10 @@ export const resumeTraining = async (taskId) => {
   if (!res.ok) throw new Error("Ошибка возобновления обучения");
   return await res.json();
 };
+
+export async function getDatasetVersionStats(versionId, workspacePath) {
+  const url = `${API_BASE_URL}/api/datasets/versions/${versionId}/stats?workspace_path=${encodeURIComponent(workspacePath)}`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error("Failed to fetch dataset stats");
+  return response.json();
+}

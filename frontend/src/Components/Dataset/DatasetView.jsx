@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import VersionList from "./VersionList";
+import DatasetStats from "./DatasetStats";
 import { getDisabledFolderPaths } from "../../utils/fileSystem";
 import "../../styles/DatasetView.css";
 
@@ -101,6 +102,13 @@ function DatasetView({
         </div>
       </div>
 
+		<div className="stats-section">
+          <DatasetStats
+            versionId={currentVersionId}
+            workspacePath={collection.workspacePath}
+          />
+        </div>
+
       <div className="dataset-content">
         <div className="versions-section">
           <h3>Версии датасета</h3>
@@ -112,6 +120,8 @@ function DatasetView({
             onDeleteVersion={onDeleteVersion}
           />
         </div>
+
+        
       </div>
     </div>
   );
