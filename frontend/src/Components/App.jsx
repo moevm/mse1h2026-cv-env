@@ -10,7 +10,7 @@ import TrainingView from "./Training/TrainingView";
 import ExperimentsView from "./Experiments/ExperimentsView";
 
 import useCollections from "../hooks/useCollections";
-import { pickWorkspacePath, scanFolderOnBackend, scanVideoFolderOnBackend, importDatasetFolder, exportDataset, listDatasetVersions, saveDatasetVersion, switchDatasetVersion, deleteDatasetVersion, listAugVersions, saveAugVersion, switchAugVersion, deleteAugVersion } from "../services/api";
+import { pickWorkspacePath, scanFolderOnBackend, scanVideoFolderOnBackend, importDatasetFolder, exportDataset, deleteDatasetByName, listDatasetVersions, saveDatasetVersion, switchDatasetVersion, deleteDatasetVersion, listAugVersions, saveAugVersion, switchAugVersion, deleteAugVersion } from "../services/api";
 
 // Сразу сплитует только что импортированную папку (фото/видео) в datasets/.
 async function autoSplitImportedFolder(collection, folder, files) {
@@ -35,7 +35,8 @@ async function autoSplitImportedFolder(collection, folder, files) {
     collectionName: collection.name,
     workspacePath: collection.workspacePath,
     subFolderName: folder.name,
-    classes: collection.projectClasses || [],
+    // projectClasses может быть массивом объектов {id,name} или строк — бэку нужны строки.
+    classes: (collection.projectClasses || []).map((c) => (typeof c === "string" ? c : c?.name)).filter(Boolean),
     items,
     trainPercent: collection.trainSplitPercent ?? 80,
     valPercent: collection.valSplitPercent ?? 10,
@@ -130,6 +131,17 @@ function App() {
     return (currentCollection?.folders || []).some(f => f.absolutePath === absolutePath);
   }
 
+  // Имя папки -> ключ датасета (зеркало backend _sanitize_dataset_name).
+  function _datasetKey(name) {
+    return (name || "dataset").trim().replace(/[^a-zA-Zа-яА-Я0-9._-]+/gu, "_").replace(/^[._-]+|[._-]+$/gu, "") || "dataset";
+  }
+
+  // Папки с одинаковым именем дают один путь в datasets/ -> конфликт. Запрещаем.
+  function _isDuplicateName(name) {
+    const key = _datasetKey(name);
+    return (currentCollection?.folders || []).some(f => _datasetKey(f.name) === key);
+  }
+
   async function handleAddPhotoFolder() {
     if (!currentCollectionId || !currentCollection) return;
     try {
@@ -138,10 +150,11 @@ function App() {
       if (_isDuplicateFolder(absolutePath)) { alert("Эта папка уже добавлена в проект!"); return; }
 
       const folderName = absolutePath.split(/[\\/]/).pop();
-      const uniqueRootPath = `src_${Date.now()}_${folderName}`;
-      const scanResult = await scanFolderOnBackend(absolutePath, uniqueRootPath);
+      if (_isDuplicateName(folderName)) { alert(`Папка с именем "${folderName}" уже есть в проекте. Имена должны быть уникальными — иначе конфликт в datasets/.`); return; }
 
-      const rootNode = { name: folderName, path: uniqueRootPath, absolutePath, isEnabled: true, folderType: "photos", children: scanResult.tree };
+      const scanResult = await scanFolderOnBackend(absolutePath, folderName);
+
+      const rootNode = { name: folderName, path: folderName, absolutePath, isEnabled: true, folderType: "photos", children: scanResult.tree };
       const updatedFolders = [...(currentCollection.folders || []), rootNode];
       updateCollection(currentCollectionId, { folders: updatedFolders });
       await syncCollection(currentCollectionId, updatedFolders);
@@ -167,13 +180,13 @@ function App() {
       const frameInterval = 1;
 
       const folderName = absolutePath.split(/[\\/]/).pop();
-      const uniqueRootPath = `src_${Date.now()}_${folderName}`;
+      if (_isDuplicateName(folderName)) { alert(`Папка с именем "${folderName}" уже есть в проекте. Имена должны быть уникальными — иначе конфликт в datasets/.`); return; }
       const workspacePath = currentCollection.workspacePath || "";
 
-      const scanResult = await scanVideoFolderOnBackend(absolutePath, uniqueRootPath, workspacePath, frameInterval);
+      const scanResult = await scanVideoFolderOnBackend(absolutePath, folderName, workspacePath, frameInterval);
 
       const rootNode = {
-        name: folderName, path: uniqueRootPath, absolutePath, isEnabled: true,
+        name: folderName, path: folderName, absolutePath, isEnabled: true,
         folderType: "videos", framesDir: scanResult.frames_dir, frameInterval,
         children: scanResult.tree,
       };
@@ -199,16 +212,16 @@ function App() {
       if (!absolutePath) return;
 
       const folderName = absolutePath.split(/[\\/]/).pop();
+      if (_isDuplicateName(folderName)) { alert(`Папка с именем "${folderName}" уже есть в проекте. Имена должны быть уникальными — иначе конфликт в datasets/.`); return; }
       const workspacePath = currentCollection.workspacePath || "";
 
       // Копируем папку в {workspace}/datasets/{name}/ и получаем плоский список файлов
       const importResult = await importDatasetFolder(absolutePath, folderName, workspacePath);
 
       // Узел коллекции — указывает на импортированную папку, children пустой (не показываем train/val/test)
-      const uniqueRootPath = `imported_${Date.now()}_${folderName}`;
       const rootNode = {
         name: importResult.dataset_name,
-        path: uniqueRootPath,
+        path: importResult.dataset_name,
         absolutePath: importResult.dataset_path,
         isEnabled: true,
         folderType: "imported_dataset",
@@ -239,6 +252,29 @@ function App() {
     if (toggleFolderState) {
       toggleFolderState(currentCollectionId, path, isEnabled);
     }
+  }
+
+  // Полностью убирает папку-источник из проекта: узел из дерева + её датасет в datasets/.
+  async function handleRemoveFolder(path) {
+    if (!currentCollection) return;
+    const folder = (currentCollection.folders || []).find((f) => f.path === path);
+    if (!folder) return;
+    if (!window.confirm(`Убрать папку "${folder.name}" из проекта? Её датасет в datasets/ будет удалён.`)) return;
+
+    const updatedFolders = (currentCollection.folders || []).filter((f) => f.path !== path);
+    try {
+      await deleteDatasetByName(currentCollection.workspacePath || "", folder.name);
+    } catch (error) {
+      console.error("Удаление датасета папки:", error);
+    }
+    // Пересчитываем images/imageCount по оставшимся папкам (иначе счётчики держат удалённую).
+    if (updatedFolders.length > 0) {
+      await syncCollection(currentCollectionId, updatedFolders);
+    } else {
+      // Последняя папка удалена — syncCollection рано выходит, поэтому сбрасываем счётчики вручную.
+      updateCollection(currentCollectionId, { folders: [], images: [], imageCount: 0 });
+    }
+    setDatasetRefreshSignal((s) => s + 1);
   }
 
   async function handleDeleteCollection(collectionId) {
@@ -379,6 +415,7 @@ function App() {
           onAddVideoFolder={handleAddVideoFolder}
           onAddDatasetFolder={handleAddDatasetFolder}
           onToggleFolder={handleToggleFolder}
+          onRemoveFolder={handleRemoveFolder}
         />
 
         <div className="content-area">
