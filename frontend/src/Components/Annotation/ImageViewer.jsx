@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import ImageAnnotator from "./ImageAnnotator";
 import { parseTxtAnnotations } from "../../utils/txtAnnotationParser";
-import { getImageUrl, readTextFileSafe } from "../../services/api.js";
+import { readTextFileSafe } from "../../services/api.js";
 import "../../styles/AnnotationView.css";
 
 function ImageViewer({ image, collection, onClose, onNext, onPrev, hasNext, hasPrev, annotationsManager, onSaveAnnotation }) {
@@ -39,21 +39,16 @@ function ImageViewer({ image, collection, onClose, onNext, onPrev, hasNext, hasP
           previewImage.src = image.url;
         });
 
-        const txtPath = image.absolutePath 
-          ? image.absolutePath.replace(/\.(jpeg|jpg|png|bmp)$/iu, ".txt")
-          : null;
+        let txtContent = image.annotationText || "";
+        if (!txtContent && image.annotationFile) {
+          const filePath = image.annotationFile.absolute_path || image.annotationFile.absolutePath;
+          if (filePath) txtContent = await readTextFileSafe(filePath);
+        }
 
-        if (txtPath) {
-          const txtContent = await readTextFileSafe(txtPath);
-          if (txtContent && isActive) {
-            const parsed = parseTxtAnnotations(txtContent, imageSize.width, imageSize.height);
-            const withIds = convertAnnotationsIndicesToIds(parsed, annotationsManager.classes);
-            
-            annotationsManager.setAnnotations(prev => [
-              ...prev.filter(a => a.imageId !== (image.uuid || image.relativePath || image.id)),
-              ...withIds.map(a => ({ ...a, imageId: image.uuid || image.relativePath || image.id }))
-            ]);
-          }
+        if (isActive) {
+          const parsed = txtContent ? parseTxtAnnotations(txtContent, imageSize.width, imageSize.height) : [];
+          const withIds = convertAnnotationsIndicesToIds(parsed, annotationsManager.classes);
+          annotationsManager.setInitialAnnotations(image.uuid || image.relativePath || image.id, withIds);
         }
       } catch (error) {
         console.error("Не удалось прочитать txt-разметку:", error);
