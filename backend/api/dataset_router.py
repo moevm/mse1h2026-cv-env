@@ -17,7 +17,7 @@ from services import version_service
 from services.project_service import scan_dataset_structure, load_project_workspace
 
 router = APIRouter(prefix="/api/datasets", tags=["Datasets"])
-
+ 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".tif", ".tiff"}
 DEFAULT_TRAIN_PERCENT = 80
 
