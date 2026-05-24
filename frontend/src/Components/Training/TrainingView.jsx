@@ -677,7 +677,7 @@ Auto-select most idle GPU</option>
                             training.status === 'stopped' ? 'Завершено' : training.status}
                     </span>
                   </div>
-                  {training.currentEpoch > 0 && training.totalEpochs && (
+                  { training.totalEpochs && (
                     <div className="epoch-actions-row">
                       <div className="detail-item"><span>Эпоха: {training.currentEpoch}/{training.totalEpochs}</span></div>
                       <div className="epoch-actions">
