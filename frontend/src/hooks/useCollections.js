@@ -27,7 +27,7 @@ function buildImagesWithAnnotations(files, loadedAnnotations = {}) {
 
   return imageFiles.map((file) => {
     const stemKey = file.relativePath.replace(/\\/g, "/").replace(/\.[^.]+$/u, "").toLowerCase();
-    // shortKey — путь без виртуального корня (первого компонента src_timestamp_name)
+    // shortKey — путь без корневого сегмента (имени папки-источника)
     const shortKey = stemKey.split("/").slice(1).join("/");
 
     const annotationTextFromBackend = loadedAnnotations[stemKey] || loadedAnnotations[shortKey] || null;

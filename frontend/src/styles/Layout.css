@@ -232,11 +232,35 @@
 
 .folder-name {
   cursor: default;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .folder-name.disabled {
   color: #777;
   text-decoration: line-through;
+}
+
+.folder-remove-btn {
+  background: none;
+  border: none;
+  color: #aaa;
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 2px 4px;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.folder-tree-row:hover .folder-remove-btn {
+  opacity: 1;
+}
+
+.folder-remove-btn:hover {
+  color: #ff6b6b;
 }
 
 .folder-icon {

@@ -260,6 +260,12 @@ export const exportDataset = async ({ collectionName, workspacePath, subFolderNa
   return await res.json();
 };
 
+export const deleteDatasetByName = async (workspacePath, datasetName) => {
+  const res = await fetch(`${API_BASE_URL}/api/datasets/remove/${encodeURIComponent(datasetName)}${buildQuery(workspacePath)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(await errorMessage(res, "Ошибка удаления папки из проекта"));
+  return await res.json();
+};
+
 export const deleteStoredDataset = async (workspacePath) => {
   const res = await fetch(`${API_BASE_URL}/api/datasets/clear${buildQuery(workspacePath)}`, { method: "DELETE" });
   if (!res.ok) throw new Error("Ошибка удаления данных");

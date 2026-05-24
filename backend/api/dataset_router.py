@@ -17,7 +17,7 @@ from services import version_service
 from services.project_service import scan_dataset_structure, load_project_workspace
 
 router = APIRouter(prefix="/api/datasets", tags=["Datasets"])
- 
+
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".tif", ".tiff"}
 DEFAULT_TRAIN_PERCENT = 80
 
@@ -311,59 +311,41 @@ def _write_or_remove_label(txt_path: Path, content: str) -> None:
         txt_path.unlink()
 
 
-def _propagate_label_to_datasets(datasets_dir: Path, relative_path: str, content: str) -> None:
-    """Raw-режим: находит соответствующий файл в datasets/ по original_path и пишет туда метку."""
-    if not relative_path or not datasets_dir.is_dir():
-        return
-    parts = [p for p in relative_path.replace("\\", "/").split("/") if p]
-    # relative_path несёт виртуальный корень (src_<ts>_name/...) — отбрасываем первый сегмент.
-    candidate = "/".join(parts[1:]) if len(parts) >= 2 else (parts[-1] if parts else "")
-    if not candidate:
+def _sync_classes_to_datasets(datasets_dir: Path, classes: list[str]) -> None:
+    if not datasets_dir.is_dir():
         return
     for ds in datasets_dir.iterdir():
-        mapping_file = ds / "uuid_mapping.json"
-        if not mapping_file.is_file():
+        if not ds.is_dir():
             continue
-        try:
-            mapping = json.loads(mapping_file.read_text(encoding="utf-8"))
-        except Exception:
-            continue
-        for uid, info in mapping.items():
-            if info.get("original_path") == candidate:
-                split = info.get("split")
-                if split in ("train", "val", "test"):
-                    lbl = ds / split / "labels" / f"{uid}.txt"
-                else:
-                    lbl = ds / "labels" / f"{uid}.txt"
-                _write_or_remove_label(lbl, content)
-                break
+        (ds / "classes.txt").write_text("\n".join(classes) + "\n", encoding="utf-8")
+        yaml_file = ds / "dataset.yaml"
+        if yaml_file.is_file():
+            test_images = ds / "test" / "images"
+            has_test = test_images.is_dir() and any(test_images.iterdir())
+            _write_dataset_yaml(str(yaml_file), classes, str(ds.resolve()), has_test)
 
 
 @router.post("/autosave")
 async def autosave_annotation(payload: AutosavePayload):
-    if payload.image_abs_path and payload.workspace_path and os.path.exists(payload.workspace_path):
-        paths = get_project_paths(payload.workspace_path)
-        img_path = Path(payload.image_abs_path).resolve()
-        datasets_dir = Path(paths["datasets"]).resolve()
+    if not (payload.workspace_path and os.path.exists(payload.workspace_path)):
+        return {"status": "success"}
 
-        # Картинка из датасета — пишем метку рядом (images -> labels, тот же stem-uuid).
+    paths = get_project_paths(payload.workspace_path)
+    datasets_dir = Path(paths["datasets"]).resolve()
+
+    if payload.image_abs_path:
+        img_path = Path(payload.image_abs_path).resolve()
         if datasets_dir in img_path.parents and img_path.parent.name == "images":
             txt_path = img_path.parent.parent / "labels" / f"{img_path.stem}.txt"
-            _write_or_remove_label(txt_path, payload.content)
+        elif payload.relative_path:
+            txt_path = Path(paths["autosave"]) / Path(payload.relative_path).with_suffix(".txt")
         else:
-            # Raw-режим: пишем в autosave-папку И пробрасываем в соответствующий датасет.
-            autosave_dir = Path(paths["autosave"])
-            if payload.relative_path:
-                txt_path = autosave_dir / Path(payload.relative_path).with_suffix(".txt")
-            else:
-                txt_path = autosave_dir / f"{img_path.stem}.txt"
-            _write_or_remove_label(txt_path, payload.content)
-            _propagate_label_to_datasets(datasets_dir, payload.relative_path, payload.content)
+            txt_path = Path(paths["autosave"]) / f"{img_path.stem}.txt"
+        _write_or_remove_label(txt_path, payload.content)
 
-    if payload.workspace_path and os.path.exists(payload.workspace_path):
-        classes_path = Path(payload.workspace_path) / "classes.txt"
-        if payload.classes:
-            classes_path.write_text("\n".join(payload.classes) + "\n", encoding="utf-8")
+    if payload.classes:
+        (Path(payload.workspace_path) / "classes.txt").write_text("\n".join(payload.classes) + "\n", encoding="utf-8")
+        _sync_classes_to_datasets(datasets_dir, payload.classes)
 
     return {"status": "success"}
 
@@ -757,6 +739,25 @@ def delete_workspace_datasets(workspace_path: str = Query(None)):
     datasets_dir = get_project_paths(workspace_path)["datasets"]
     if os.path.isdir(datasets_dir): shutil.rmtree(datasets_dir, ignore_errors=True)
     return {"status": "success", "message": "Данные воркспейса очищены"}
+
+@router.delete("/remove/{dataset_name}")
+def delete_single_dataset(dataset_name: str, workspace_path: str = Query(None)):
+    paths = get_project_paths(workspace_path)
+    safe = _sanitize_dataset_name(dataset_name)
+
+    datasets_dir = Path(paths["datasets"])
+    target = (datasets_dir / safe).resolve()
+    if not str(target).startswith(str(datasets_dir.resolve())):
+        raise HTTPException(status_code=400, detail="Некорректный путь")
+    if target.is_dir():
+        shutil.rmtree(target, ignore_errors=True)
+
+    frames_dir = Path(paths["frames"])
+    frames_target = (frames_dir / safe).resolve()
+    if str(frames_target).startswith(str(frames_dir.resolve())) and frames_target.is_dir():
+        shutil.rmtree(frames_target, ignore_errors=True)
+
+    return {"status": "success", "dataset_name": safe}
 
 @router.get("/files/{file_path:path}")
 def get_dataset_file(file_path: str, workspace_path: str = Query(None)):

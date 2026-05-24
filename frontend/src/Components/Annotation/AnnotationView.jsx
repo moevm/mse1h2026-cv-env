@@ -16,94 +16,12 @@ function sanitizeDatasetName(name) {
   return cleaned || "dataset";
 }
 
-// Жадное распределение целых групп по сплитам — копия серверного _build_split_plan. Группа = кадры одного видео либо одно изображение.
-function planGroupsToSplits(groupSizes, trainPercent, valPercent) {
-  const total = groupSizes.reduce((sum, g) => sum + g.size, 0);
-  if (total === 0) return { train: 0, val: 0, test: 0 };
-  if (total <= 1) return { train: total, val: 0, test: 0 };
-
-  const groups = [...groupSizes].sort((a, b) => b.size - a.size || a.key.localeCompare(b.key));
-
-  const targets = {
-    train: total * (trainPercent / 100),
-    val: total * (valPercent / 100),
-    test: total * (Math.max(0, 100 - trainPercent - valPercent) / 100),
-  };
-  const assigned = { train: 0, val: 0, test: 0 };
-  const splitOf = {};
-
-  for (const g of groups) {
-    const split = ["train", "val", "test"].reduce((best, s) =>
-      (targets[s] - assigned[s]) > (targets[best] - assigned[best]) ? s : best
-    );
-    splitOf[g.key] = split;
-    assigned[split] += g.size;
-  }
-
-  // Гарантия непустого train, затем val (val% > 0) — переносом целой группы.
-  if (assigned.train === 0) {
-    const donor = assigned.val >= assigned.test ? "val" : "test";
-    const g = groups.find((x) => splitOf[x.key] === donor);
-    if (g) { assigned[donor] -= g.size; assigned.train += g.size; splitOf[g.key] = "train"; }
-  }
-
-  if (valPercent > 0 && assigned.val === 0 && assigned.train > 0) {
-    const trainGroups = groups.filter((x) => splitOf[x.key] === "train").sort((a, b) => a.key.localeCompare(b.key));
-    if (trainGroups.length > 1) {
-      const g = trainGroups[trainGroups.length - 1];
-      assigned.train -= g.size; assigned.val += g.size; splitOf[g.key] = "val";
-    }
-  }
-
-  return assigned;
-}
-
-// Группирует как экспорт: по активным корневым папкам; в папках видео кадры одного видео = одна группа, иначе каждое изображение — своя.
-function getSplitPreview(images, folders, trainPercent, valPercent) {
-  if (!images || images.length === 0) return { trainCount: 0, valCount: 0, testCount: 0 };
-
-  const activeFolders = (folders || []).filter((f) => f.isEnabled);
-  const matched = new Set();
-  const totals = { train: 0, val: 0, test: 0 };
-
-  const accumulate = (groupMap) => {
-    const sizes = Object.entries(groupMap).map(([key, size]) => ({ key, size }));
-    const res = planGroupsToSplits(sizes, trainPercent, valPercent);
-    totals.train += res.train; totals.val += res.val; totals.test += res.test;
-  };
-
-  for (const folder of activeFolders) {
-    const groupMap = {};
-    for (const img of images) {
-      const rp = img.relativePath || "";
-      const underFolder = rp === folder.path || rp.startsWith(folder.path + "/");
-      if (!underFolder) continue;
-      matched.add(img);
-      let cleanPath = rp === folder.path ? rp.split("/").pop() : rp.substring(folder.path.length + 1);
-      const key = folder.folderType === "videos" ? cleanPath.split("/")[0] : cleanPath;
-      groupMap[`${folder.path}|${key}`] = (groupMap[`${folder.path}|${key}`] || 0) + 1;
-    }
-    if (Object.keys(groupMap).length) accumulate(groupMap);
-  }
-
-  // Картинки вне активных папок (напр. источник «из datasets/») — каждая своя группа.
-  const loose = images.filter((img) => !matched.has(img));
-  if (loose.length) {
-    const groupMap = {};
-    loose.forEach((img, i) => { groupMap[img.relativePath || `loose_${i}`] = 1; });
-    accumulate(groupMap);
-  }
-
-  return { trainCount: totals.train, valCount: totals.val, testCount: totals.test };
-}
-
-function AnnotationView({ collection, versions, currentVersionId, onCollectionUpdate, datasetRefreshSignal }) {
+function AnnotationView({ collection, currentVersionId, onCollectionUpdate, datasetRefreshSignal }) {
   const [currentImage, setCurrentImage] = useState(null);
   const [showViewer, setShowViewer] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
 
-  const [useDatasetSource, setUseDatasetSource] = useState(true);
   const [datasetImages, setDatasetImages] = useState([]);
   const [datasetLoading, setDatasetLoading] = useState(false);
   const [datasetRefreshKey, setDatasetRefreshKey] = useState(0);
@@ -124,11 +42,9 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
     }
   }, [annotationsManager.classes, collection, onCollectionUpdate, annotationsManager.isReady]);
 
-  const currentVersion = versions.find((v) => v.id === currentVersionId);
-
-  // Загружаем файлы из datasets/ при включении режима или смене версии
+  // Загружаем файлы из datasets/ (единственный источник разметки)
   useEffect(() => {
-    if (!useDatasetSource || !collection) {
+    if (!collection) {
       setDatasetImages([]);
       return;
     }
@@ -146,7 +62,7 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
       })
       .catch((err) => { console.error("[datasets scan]", err); setDatasetImages([]); })
       .finally(() => setDatasetLoading(false));
-  }, [useDatasetSource, collection?.id, collection?.folders?.length, currentVersionId, datasetRefreshKey, datasetRefreshSignal]);
+  }, [collection?.id, collection?.folders?.length, currentVersionId, datasetRefreshKey, datasetRefreshSignal]);
 
   const ignoredPaths = useMemo(() => {
     return collection?.folders ? getDisabledFolderPaths(collection.folders) : [];
@@ -159,21 +75,16 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
   );
 
   const images = useMemo(() => {
-    if (useDatasetSource) {
-      if (ignoredPaths.length === 0) return datasetImages;
-      return datasetImages.filter((img) => {
-        const datasetName = (img.relativePath || "").split("/")[0];
-        const folderPath = folderPathByDataset.get(datasetName);
-        // Реконструируем путь в дереве проекта: folder.path / originalPath, и применяем тот же фильтр, что в raw.
-        if (!folderPath || !img.originalPath) return true;
-        const fullPath = `${folderPath}/${img.originalPath}`;
-        return !ignoredPaths.some((p) => fullPath === p || fullPath.startsWith(p + "/"));
-      });
-    }
-    const baseImages = currentVersion?.images || collection?.images || [];
-    if (ignoredPaths.length === 0) return baseImages;
-    return baseImages.filter(img => !ignoredPaths.some(ignoredPath => img.relativePath.startsWith(ignoredPath + '/')));
-  }, [useDatasetSource, datasetImages, collection?.images, currentVersion?.images, ignoredPaths, folderPathByDataset]);
+    if (ignoredPaths.length === 0) return datasetImages;
+    // Скрываем картинки выключенных папок: реконструируем путь в дереве проекта (folder.path / originalPath).
+    return datasetImages.filter((img) => {
+      const datasetName = (img.relativePath || "").split("/")[0];
+      const folderPath = folderPathByDataset.get(datasetName);
+      if (!folderPath || !img.originalPath) return true;
+      const fullPath = `${folderPath}/${img.originalPath}`;
+      return !ignoredPaths.some((p) => fullPath === p || fullPath.startsWith(p + "/"));
+    });
+  }, [datasetImages, ignoredPaths, folderPathByDataset]);
 
   const galleryImages = images.map((image) => ({
     ...image,
@@ -188,20 +99,30 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
   const thumb1 = trainSplitPercent; 
   const thumb2 = trainSplitPercent + valSplitPercent;
   
-  // Локальный предпросмотр — для источника «исходные папки».
-  const localPreview = useMemo(() =>
-    getSplitPreview(images, collection?.folders, trainSplitPercent, valSplitPercent),
-    [images, collection?.folders, trainSplitPercent, valSplitPercent]
-  );
-
-  // В режиме «из datasets/» реальные числа считает бэк (он знает videoGroup).
+  // Реальные числа сплита: для фото/видео — гипотетический респлит (бэк знает videoGroup),
+  // для импортированных датасетов — ФАКТИЧЕСКИЙ сплит (мы их не пересобираем, разбивка инвариантна).
   useEffect(() => {
-    if (!useDatasetSource || !collection) { setDatasetPreview(null); return; }
+    if (!collection) { setDatasetPreview(null); return; }
     const activeFolders = (collection.folders || []).filter((f) => f.isEnabled);
     if (activeFolders.length === 0) { setDatasetPreview(null); return; }
     const timer = setTimeout(async () => {
       try {
-        const results = await Promise.all(activeFolders.map((folder) =>
+        const sum = { trainCount: 0, valCount: 0, testCount: 0 };
+        const toPreview = [];
+        for (const folder of activeFolders) {
+          if (folder.folderType === "imported_dataset") {
+            const dsName = sanitizeDatasetName(folder.name);
+            for (const img of datasetImages) {
+              if ((img.relativePath || "").split("/")[0] !== dsName) continue;
+              if (img.split === "train") sum.trainCount++;
+              else if (img.split === "val") sum.valCount++;
+              else if (img.split === "test") sum.testCount++;
+            }
+          } else {
+            toPreview.push(folder);
+          }
+        }
+        const results = await Promise.all(toPreview.map((folder) =>
           resplitPreview({
             workspacePath: collection.workspacePath,
             datasetName: folder.name,
@@ -210,7 +131,6 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
             testPercent: testSplitPercent,
           }).catch(() => null)
         ));
-        const sum = { trainCount: 0, valCount: 0, testCount: 0 };
         for (const r of results) {
           if (!r?.split_counts) continue;
           sum.trainCount += r.split_counts.train || 0;
@@ -221,9 +141,9 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
       } catch { setDatasetPreview(null); }
     }, 300);
     return () => clearTimeout(timer);
-  }, [useDatasetSource, collection?.workspacePath, collection?.folders, trainSplitPercent, valSplitPercent, testSplitPercent, datasetRefreshKey, datasetRefreshSignal]);
+  }, [collection?.workspacePath, collection?.folders, datasetImages, trainSplitPercent, valSplitPercent, testSplitPercent, datasetRefreshKey, datasetRefreshSignal]);
 
-  const { trainCount, valCount, testCount } = (useDatasetSource && datasetPreview) ? datasetPreview : localPreview;
+  const { trainCount, valCount, testCount } = datasetPreview || { trainCount: 0, valCount: 0, testCount: 0 };
 
   // Обработка движения ползунков с "проталкиванием"
   const handleThumbChange = (index, value) => {
@@ -275,8 +195,9 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
   // Пересобирает сплит уже импортированных датасетов под текущие % (без потери разметки).
   async function handleResplit() {
     if (!collection) return;
-    const activeFolders = (collection.folders || []).filter((f) => f.isEnabled);
-    if (activeFolders.length === 0) { setSaveMessage("Нет активных папок для пересборки."); return; }
+    // Импортированные датасеты не трогаем — сохраняем исходный train/val/test автора.
+    const activeFolders = (collection.folders || []).filter((f) => f.isEnabled && f.folderType !== "imported_dataset");
+    if (activeFolders.length === 0) { setSaveMessage("Нет папок для пересборки (импортированные датасеты не пересобираются)."); return; }
     try {
       setIsSaving(true);
       setSaveMessage("");
@@ -341,20 +262,9 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
           <h2>{collection.name}</h2>
           <div className="version-info">
             Всего изображений: {datasetLoading ? "..." : images.length}
-            {useDatasetSource && !datasetLoading && (
-              <span className="source-badge">из datasets/</span>
-            )}
           </div>
         </div>
         <div className="annotation-actions" style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          <label className="dataset-source-toggle" title="Показывать файлы из папки datasets/ вместо исходных файлов проекта">
-            <input
-              type="checkbox"
-              checked={useDatasetSource}
-              onChange={e => { setUseDatasetSource(e.target.checked); setCurrentImage(null); }}
-            />
-            <span>Из datasets/</span>
-          </label>
           <button className="action-button primary" onClick={handleResplit} disabled={isSaving || images.length === 0} title="Перераспределить данные по train/val/test под текущие проценты (разметка сохраняется)">
             {isSaving ? "Пересборка..." : "Пересобрать сплит"}
           </button>
