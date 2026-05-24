@@ -487,7 +487,7 @@ https://github.com/moevm/mse1h2026-cv-env/blob/reports/docs/iteration3_presentat
 ## Итерация №4
 
 ### Презентация
-https://github.com/moevm/mse1h2026-cv-env/blob/reports/docs/iteration4_presentation.pdf
+https://github.com/moevm/mse1h2026-cv-env/blob/reports/docs/Iteration4_presentation.pdf
 
 ### Запланированные задачи
 1. Улучшить UI/UX
