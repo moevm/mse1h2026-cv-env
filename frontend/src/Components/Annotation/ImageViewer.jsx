@@ -8,6 +8,8 @@ function ImageViewer({ image, collection, onClose, onNext, onPrev, hasNext, hasP
   const [currentUrl, setCurrentUrl] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
 
+  const [currentTool, setCurrentTool] = useState(null);
+
   const convertIndexToClassId = (classIndex, classes) => {
     if (classIndex >= 0 && classIndex < classes.length) return classes[classIndex].id;
     return null;
@@ -23,7 +25,6 @@ function ImageViewer({ image, collection, onClose, onNext, onPrev, hasNext, hasP
   };
 
   useEffect(() => {
-    // Ждем полной готовности классов
     if (!image || !annotationsManager.isReady) return;
     let isActive = true;
     setCurrentUrl(image.url);
@@ -37,43 +38,22 @@ function ImageViewer({ image, collection, onClose, onNext, onPrev, hasNext, hasP
           previewImage.onerror = reject;
           previewImage.src = image.url;
         });
-        
-        if (!isActive) return;
-        
-        let parsedAnnotations = [];
-        const absPath = image.absolutePath || image.file?.absolute_path;
 
-        // Пытаемся гарантированно (И ТИХО) загрузить свежий .txt файл с диска
-        if (absPath) {
-          const txtPath = absPath.replace(/\.[^.]+$/u, '.txt');
-          const txtContent = await readTextFileSafe(txtPath); // Используем наш новый безопасный метод
-          
-          if (txtContent && txtContent.trim()) {
-            parsedAnnotations = parseTxtAnnotations(txtContent, imageSize.width, imageSize.height);
+        const txtPath = image.absolutePath 
+          ? image.absolutePath.replace(/\.(jpeg|jpg|png|bmp)$/iu, ".txt")
+          : null;
+
+        if (txtPath) {
+          const txtContent = await readTextFileSafe(txtPath);
+          if (txtContent && isActive) {
+            const parsed = parseTxtAnnotations(txtContent, imageSize.width, imageSize.height);
+            const withIds = convertAnnotationsIndicesToIds(parsed, annotationsManager.classes);
+            
+            annotationsManager.setAnnotations(prev => [
+              ...prev.filter(a => a.imageId !== (image.uuid || image.relativePath || image.id)),
+              ...withIds.map(a => ({ ...a, imageId: image.uuid || image.relativePath || image.id }))
+            ]);
           }
-        }
-        
-        // Fallback на старую логику кэша
-        if (parsedAnnotations.length === 0) {
-          if (image.annotationText && image.annotationText.trim()) {
-            parsedAnnotations = parseTxtAnnotations(image.annotationText, imageSize.width, imageSize.height);
-          } else if (image.annotationFile) {
-            const filePath = image.annotationFile.absolute_path || image.annotationFile.absolutePath;
-            if (filePath) {
-               // Тут тоже можно использовать readTextFileSafe при желании
-               const txtContent = await readTextFileSafe(filePath);
-               if (txtContent && txtContent.trim()) {
-                 parsedAnnotations = parseTxtAnnotations(txtContent, imageSize.width, imageSize.height);
-               }
-            }
-          }
-        }
-        
-        if (parsedAnnotations.length > 0) {
-          const convertedAnnotations = convertAnnotationsIndicesToIds(parsedAnnotations, annotationsManager.classes);
-          annotationsManager.setInitialAnnotations(image.uuid || image.relativePath || image.id, convertedAnnotations);
-        } else {
-          annotationsManager.setInitialAnnotations(image.uuid || image.relativePath || image.id, []);
         }
       } catch (error) {
         console.error("Не удалось прочитать txt-разметку:", error);
@@ -111,6 +91,8 @@ function ImageViewer({ image, collection, onClose, onNext, onPrev, hasNext, hasP
             onClose={onClose}
             annotationsManager={annotationsManager}
             onSaveAnnotation={onSaveAnnotation}
+            currentTool={currentTool}
+            setCurrentTool={setCurrentTool}
           />
         )}
       </div>

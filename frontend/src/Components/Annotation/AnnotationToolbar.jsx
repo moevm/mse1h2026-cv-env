@@ -3,7 +3,7 @@ import "../../styles/ImageAnnotator.css";
 function AnnotationToolbar({
   currentTool,
   onToolSelect,
-  onZooomIncr,
+  onZoomIncr,
   onZoomDecr,
   onApprove,
 }) {
@@ -61,11 +61,25 @@ function AnnotationToolbar({
           </svg>
         </button>
 
-        <button className="tool-button" onClick={onZooomIncr} title="Масштаб +">
+        <button 
+          className="tool-button" 
+          onClick={(e) => {
+            e.stopPropagation();
+            onZoomIncr();
+          }} 
+          title="Масштаб +"
+        >
           +
         </button>
 
-        <button className="tool-button" onClick={onZoomDecr} title="Масштаб -">
+        <button 
+          className="tool-button" 
+          onClick={(e) => {
+            e.stopPropagation();
+            onZoomDecr();
+          }} 
+          title="Масштаб -"
+        >
           -
         </button>
       </div>
