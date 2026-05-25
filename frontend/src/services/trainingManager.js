@@ -80,7 +80,7 @@ class TrainingManager {
   // --- Восстановление активных задач с бэкенда ---
   async initFromBackend() {
     try {
-      const response = await fetch("/api/training/active");
+      const response = await fetch("http://localhost:8000/api/training/active");
       if (!response.ok) return;
       const data = await response.json();
       for (const task of data.active_tasks) {
