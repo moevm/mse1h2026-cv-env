@@ -11,36 +11,29 @@ function rectangleToBbox(annotation) {
   };
 }
 
-function polygonToBbox(annotation) {
-  const xs = annotation.points.map((point) => point.x);
-  const ys = annotation.points.map((point) => point.y);
-
-  const minX = Math.min(...xs);
-  const minY = Math.min(...ys);
-  const maxX = Math.max(...xs);
-  const maxY = Math.max(...ys);
-
-  return {
-    x: minX,
-    y: minY,
-    width: maxX - minX,
-    height: maxY - minY,
-  };
-}
-
 export function annotationToYoloLine(annotation, classIndex, imageWidth, imageHeight) {
   if (!imageWidth || !imageHeight || classIndex == null) {
-    return null; 
+    return null;
   }
 
-  let bbox = null;
-
-  if (annotation.type === "rectangle") {
-    bbox = rectangleToBbox(annotation);
-  } else if (annotation.type === "polygon" && annotation.points?.length >= 3) {
-    bbox = polygonToBbox(annotation);
+  // Полигон -> YOLO-segmentation: class x1 y1 x2 y2 ... xn yn (нормализованные точки контура).
+  if (annotation.type === "polygon") {
+    if (!annotation.points || annotation.points.length < 3) {
+      return null;
+    }
+    const coords = [];
+    for (const point of annotation.points) {
+      coords.push(clamp(point.x / imageWidth, 0, 1));
+      coords.push(clamp(point.y / imageHeight, 0, 1));
+    }
+    return [String(classIndex), ...coords.map((value) => Number(value).toFixed(6))].join(" ");
   }
 
+  // Прямоугольник -> YOLO-detection: class cx cy w h.
+  if (annotation.type !== "rectangle") {
+    return null;
+  }
+  const bbox = rectangleToBbox(annotation);
   if (!bbox || bbox.width <= 0 || bbox.height <= 0) {
     return null;
   }

@@ -10,7 +10,40 @@ import TrainingView from "./Training/TrainingView";
 import ExperimentsView from "./Experiments/ExperimentsView";
 
 import useCollections from "../hooks/useCollections";
-import { pickWorkspacePath, scanFolderOnBackend, scanVideoFolderOnBackend, scanDatasetFolderOnBackend, importDatasetFolder, listDatasetVersions, saveDatasetVersion, switchDatasetVersion, deleteDatasetVersion, listAugVersions, saveAugVersion, switchAugVersion, deleteAugVersion } from "../services/api";
+import { pickWorkspacePath, scanFolderOnBackend, scanVideoFolderOnBackend, importDatasetFolder, exportDataset, deleteDatasetByName, listDatasetVersions, saveDatasetVersion, switchDatasetVersion, deleteDatasetVersion, listAugVersions, saveAugVersion, switchAugVersion, deleteAugVersion } from "../services/api";
+
+// Сразу сплитует только что импортированную папку (фото/видео) в datasets/.
+async function autoSplitImportedFolder(collection, folder, files) {
+  if (!files || files.length === 0) return;
+  const prefix = folder.path + "/";
+  const items = files
+    .filter((f) => (f.type || "").startsWith("image/"))
+    .map((f) => {
+      const rp = f.relativePath || "";
+      const cleanPath = rp.startsWith(prefix) ? rp.substring(prefix.length) : (f.name || rp);
+      const item = {
+        absolutePath: f.absolute_path || f.absolutePath,
+        relativePath: cleanPath,
+        annotationTxt: f.annotationText || "",
+      };
+      if (folder.folderType === "videos") item.videoGroup = cleanPath.split("/")[0];
+      return item;
+    });
+  if (items.length === 0) return;
+
+  await exportDataset({
+    collectionName: collection.name,
+    workspacePath: collection.workspacePath,
+    subFolderName: folder.name,
+    // projectClasses может быть массивом объектов {id,name} или строк — бэку нужны строки.
+    classes: (collection.projectClasses || []).map((c) => (typeof c === "string" ? c : c?.name)).filter(Boolean),
+    items,
+    trainPercent: collection.trainSplitPercent ?? 80,
+    valPercent: collection.valSplitPercent ?? 10,
+    testPercent: collection.testSplitPercent ?? 10,
+    splitMode: "split",
+  });
+}
 
 import "../styles/App.css";
 
@@ -24,12 +57,14 @@ function App() {
     updateCollection,
     syncCollection,
     toggleFolderState,
-    loadProject
+    loadProject,
+    flushProjectConfig
   } = useCollections();
   
   const [currentCollectionId, setCurrentCollectionId] = useState(null);
   const [currentTab, setCurrentTab] = useState("dataset");
   const [showManagerModal, setShowManagerModal] = useState(false);
+  const [datasetRefreshSignal, setDatasetRefreshSignal] = useState(0);
 
   const [versions, setVersions] = useState([]);
   const [currentVersionId, setCurrentVersionId] = useState(null);
@@ -103,6 +138,17 @@ function App() {
     return (currentCollection?.folders || []).some(f => f.absolutePath === absolutePath);
   }
 
+  // Имя папки -> ключ датасета (зеркало backend _sanitize_dataset_name).
+  function _datasetKey(name) {
+    return (name || "dataset").trim().replace(/[^a-zA-Zа-яА-Я0-9._-]+/gu, "_").replace(/^[._-]+|[._-]+$/gu, "") || "dataset";
+  }
+
+  // Папки с одинаковым именем дают один путь в datasets/ -> конфликт. Запрещаем.
+  function _isDuplicateName(name) {
+    const key = _datasetKey(name);
+    return (currentCollection?.folders || []).some(f => _datasetKey(f.name) === key);
+  }
+
   async function handleAddPhotoFolder() {
     if (!currentCollectionId || !currentCollection) return;
     try {
@@ -111,13 +157,21 @@ function App() {
       if (_isDuplicateFolder(absolutePath)) { alert("Эта папка уже добавлена в проект!"); return; }
 
       const folderName = absolutePath.split(/[\\/]/).pop();
-      const uniqueRootPath = `src_${Date.now()}_${folderName}`;
-      const scanResult = await scanFolderOnBackend(absolutePath, uniqueRootPath);
+      if (_isDuplicateName(folderName)) { alert(`Папка с именем "${folderName}" уже есть в проекте. Имена должны быть уникальными — иначе конфликт в datasets/.`); return; }
 
-      const rootNode = { name: folderName, path: uniqueRootPath, absolutePath, isEnabled: true, folderType: "photos", children: scanResult.tree };
+      const scanResult = await scanFolderOnBackend(absolutePath, folderName);
+
+      const rootNode = { name: folderName, path: folderName, absolutePath, isEnabled: true, folderType: "photos", children: scanResult.tree };
       const updatedFolders = [...(currentCollection.folders || []), rootNode];
       updateCollection(currentCollectionId, { folders: updatedFolders });
       await syncCollection(currentCollectionId, updatedFolders);
+      try {
+        await autoSplitImportedFolder(currentCollection, rootNode, scanResult.files);
+      } catch (splitError) {
+        console.error("Авто-сплит при добавлении фото:", splitError);
+        alert("Папка добавлена, но не удалось разложить по train/val/test: " + splitError.message);
+      }
+      setDatasetRefreshSignal((s) => s + 1);
     } catch (error) {
       alert("Ошибка добавления папки с фото: " + error.message);
     }
@@ -133,19 +187,26 @@ function App() {
       const frameInterval = 1;
 
       const folderName = absolutePath.split(/[\\/]/).pop();
-      const uniqueRootPath = `src_${Date.now()}_${folderName}`;
+      if (_isDuplicateName(folderName)) { alert(`Папка с именем "${folderName}" уже есть в проекте. Имена должны быть уникальными — иначе конфликт в datasets/.`); return; }
       const workspacePath = currentCollection.workspacePath || "";
 
-      const scanResult = await scanVideoFolderOnBackend(absolutePath, uniqueRootPath, workspacePath, frameInterval);
+      const scanResult = await scanVideoFolderOnBackend(absolutePath, folderName, workspacePath, frameInterval);
 
       const rootNode = {
-        name: folderName, path: uniqueRootPath, absolutePath, isEnabled: true,
+        name: folderName, path: folderName, absolutePath, isEnabled: true,
         folderType: "videos", framesDir: scanResult.frames_dir, frameInterval,
         children: scanResult.tree,
       };
       const updatedFolders = [...(currentCollection.folders || []), rootNode];
       updateCollection(currentCollectionId, { folders: updatedFolders });
       await syncCollection(currentCollectionId, updatedFolders);
+      try {
+        await autoSplitImportedFolder(currentCollection, rootNode, scanResult.files);
+      } catch (splitError) {
+        console.error("Авто-сплит при добавлении видео:", splitError);
+        alert("Папка добавлена, но не удалось разложить по train/val/test: " + splitError.message);
+      }
+      setDatasetRefreshSignal((s) => s + 1);
     } catch (error) {
       alert("Ошибка обработки видео: " + error.message);
     }
@@ -158,16 +219,16 @@ function App() {
       if (!absolutePath) return;
 
       const folderName = absolutePath.split(/[\\/]/).pop();
+      if (_isDuplicateName(folderName)) { alert(`Папка с именем "${folderName}" уже есть в проекте. Имена должны быть уникальными — иначе конфликт в datasets/.`); return; }
       const workspacePath = currentCollection.workspacePath || "";
 
       // Копируем папку в {workspace}/datasets/{name}/ и получаем плоский список файлов
       const importResult = await importDatasetFolder(absolutePath, folderName, workspacePath);
 
       // Узел коллекции — указывает на импортированную папку, children пустой (не показываем train/val/test)
-      const uniqueRootPath = `imported_${Date.now()}_${folderName}`;
       const rootNode = {
         name: importResult.dataset_name,
-        path: uniqueRootPath,
+        path: importResult.dataset_name,
         absolutePath: importResult.dataset_path,
         isEnabled: true,
         folderType: "imported_dataset",
@@ -183,15 +244,44 @@ function App() {
       }
       updateCollection(currentCollectionId, updates);
       await syncCollection(currentCollectionId, updatedFolders);
+      setDatasetRefreshSignal((s) => s + 1);
     } catch (error) {
       alert("Ошибка импорта датасета: " + error.message);
     }
+  }
+
+  async function handleSyncAndRefresh(collectionId) {
+    await syncCollection(collectionId);
+    setDatasetRefreshSignal((s) => s + 1);
   }
 
   function handleToggleFolder(path, isEnabled) {
     if (toggleFolderState) {
       toggleFolderState(currentCollectionId, path, isEnabled);
     }
+  }
+
+  // Полностью убирает папку-источник из проекта: узел из дерева + её датасет в datasets/.
+  async function handleRemoveFolder(path) {
+    if (!currentCollection) return;
+    const folder = (currentCollection.folders || []).find((f) => f.path === path);
+    if (!folder) return;
+    if (!window.confirm(`Убрать папку "${folder.name}" из проекта? Её датасет в datasets/ будет удалён.`)) return;
+
+    const updatedFolders = (currentCollection.folders || []).filter((f) => f.path !== path);
+    try {
+      await deleteDatasetByName(currentCollection.workspacePath || "", folder.name);
+    } catch (error) {
+      console.error("Удаление датасета папки:", error);
+    }
+    // Пересчитываем images/imageCount по оставшимся папкам (иначе счётчики держат удалённую).
+    if (updatedFolders.length > 0) {
+      await syncCollection(currentCollectionId, updatedFolders);
+    } else {
+      // Последняя папка удалена — syncCollection рано выходит, поэтому сбрасываем счётчики вручную.
+      updateCollection(currentCollectionId, { folders: [], images: [], imageCount: 0 });
+    }
+    setDatasetRefreshSignal((s) => s + 1);
   }
 
   async function handleDeleteCollection(collectionId) {
@@ -206,6 +296,8 @@ function App() {
     if (!currentCollection) return;
     setVersionsLoading(true);
     try {
+      // Сбрасываем project.yaml на диск, чтобы версия захватила актуальные сплит/папки/классы.
+      await flushProjectConfig(currentCollectionId);
       const data = await saveDatasetVersion(currentCollection.workspacePath || "", name);
       const newVersion = data.version;
       setVersions(prev => [newVersion, ...prev]);
@@ -221,9 +313,15 @@ function App() {
     if (!currentCollection || versionId === currentVersionId) return;
     setVersionsLoading(true);
     try {
-      await switchDatasetVersion(currentCollection.workspacePath || "", versionId);
+      const data = await switchDatasetVersion(currentCollection.workspacePath || "", versionId);
       setCurrentVersionId(versionId);
-      await syncCollection(currentCollectionId);
+      // Пересобираем проект из восстановленного project.yaml версии (папки/сплит/классы),
+      // иначе в UI остаются текущие значения вместо версионных.
+      if (data?.project?.config) {
+        await loadProject(data.project);
+      } else {
+        await syncCollection(currentCollectionId);
+      }
     } catch (error) {
       alert("Ошибка переключения версии: " + error.message);
     } finally {
@@ -300,8 +398,8 @@ function App() {
     );
 
     switch (currentTab) {
-      case "dataset": return <DatasetView key={currentCollectionId} collection={currentCollection} versions={versions} currentVersionId={currentVersionId} versionsLoading={versionsLoading} onCreateVersion={handleCreateVersion} onSelectVersion={handleSelectVersion} onDeleteVersion={handleDeleteVersion} onUpdateSplit={()=>{}} onSync={syncCollection} />;
-      case "annotation": return <AnnotationView key={currentCollectionId} collection={currentCollection} versions={versions} currentVersionId={currentVersionId} onCollectionUpdate={updateCollection} />;
+      case "dataset": return <DatasetView key={currentCollectionId} collection={currentCollection} versions={versions} currentVersionId={currentVersionId} versionsLoading={versionsLoading} onCreateVersion={handleCreateVersion} onSelectVersion={handleSelectVersion} onDeleteVersion={handleDeleteVersion} onUpdateSplit={()=>{}} onSync={handleSyncAndRefresh} />;
+      case "annotation": return <AnnotationView key={currentCollectionId} collection={currentCollection} versions={versions} currentVersionId={currentVersionId} onCollectionUpdate={updateCollection} datasetRefreshSignal={datasetRefreshSignal} />;
       case "augmentation": return <AugmentationView key={currentCollectionId} collection={currentCollection} versions={versions} currentVersionId={currentVersionId} augVersions={augVersions} currentAugVersionId={currentAugVersionId} augVersionsLoading={augVersionsLoading} onCreateAugVersion={handleCreateAugVersion} onSelectAugVersion={handleSelectAugVersion} onDeleteAugVersion={handleDeleteAugVersion} />;
       case "training": return <TrainingView key={currentCollectionId} collection={currentCollection} currentVersionId={currentVersionId} versions={versions} />;
       case "experiments": return <ExperimentsView key={currentCollectionId} collection={currentCollection} />;
@@ -324,6 +422,7 @@ function App() {
           onAddVideoFolder={handleAddVideoFolder}
           onAddDatasetFolder={handleAddDatasetFolder}
           onToggleFolder={handleToggleFolder}
+          onRemoveFolder={handleRemoveFolder}
         />
 
         <div className="content-area">

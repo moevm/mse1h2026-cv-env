@@ -1,25 +1,3 @@
-const FALLBACK_COLORS = [
-  '#FF6B6B',
-  '#4ECDC4',
-  '#45B7D1',
-  '#96CEB4',
-  '#FFEEAD',
-  '#D4A5A5',
-  '#9B59B6',
-  '#3498DB',
-  '#E67E22',
-  '#2ECC71',
-];
-
-function getColorByClassKey(classKey) {
-  const normalized = String(classKey ?? 'unknown');
-  let hash = 0;
-  for (let i = 0; i < normalized.length; i += 1) {
-    hash = (hash * 31 + normalized.charCodeAt(i)) >>> 0;
-  }
-  return FALLBACK_COLORS[hash % FALLBACK_COLORS.length];
-}
-
 export function parseTxtAnnotations(txtContent, imageWidth, imageHeight) {
   if (!txtContent || !imageWidth || !imageHeight) {
     return [];
@@ -35,21 +13,34 @@ export function parseTxtAnnotations(txtContent, imageWidth, imageHeight) {
         return null;
       }
 
-      const [rawClassId, rawA, rawB, rawC, rawD] = parts;
-      const a = Number(rawA);
-      const b = Number(rawB);
-      const c = Number(rawC);
-      const d = Number(rawD);
-
-      if ([a, b, c, d].some((value) => Number.isNaN(value))) {
+      const rawClassId = parts[0];
+      const coords = parts.slice(1).map(Number);
+      if (coords.some((value) => Number.isNaN(value))) {
         return null;
       }
 
+      // Полигон (YOLO-segmentation): class x1 y1 ... xn yn — чётное число координат >= 6.
+      if (coords.length >= 6 && coords.length % 2 === 0) {
+        const allNormalized = coords.every((value) => value >= 0 && value <= 1);
+        const points = [];
+        for (let i = 0; i < coords.length; i += 2) {
+          points.push({
+            x: allNormalized ? coords[i] * imageWidth : coords[i],
+            y: allNormalized ? coords[i + 1] * imageHeight : coords[i + 1],
+          });
+        }
+        return {
+          id: `txt-${rawClassId}-${index}`,
+          type: 'polygon',
+          classId: rawClassId,
+          points,
+        };
+      }
+
+      // Прямоугольник (YOLO-detection): class cx cy w h.
+      const [a, b, c, d] = coords;
       const isNormalized =
-        a >= 0 && a <= 1 &&
-        b >= 0 && b <= 1 &&
-        c >= 0 && c <= 1 &&
-        d >= 0 && d <= 1;
+        a >= 0 && a <= 1 && b >= 0 && b <= 1 && c >= 0 && c <= 1 && d >= 0 && d <= 1;
 
       let x;
       let y;
@@ -71,7 +62,7 @@ export function parseTxtAnnotations(txtContent, imageWidth, imageHeight) {
       return {
         id: `txt-${rawClassId}-${index}`,
         type: 'rectangle',
-        classId: rawClassId, 
+        classId: rawClassId,
         x,
         y,
         width,

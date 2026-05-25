@@ -4,62 +4,28 @@ import ImageViewer from "./ImageViewer";
 
 import useAnnotations from "../../hooks/useAnnotations";
 import { getDisabledFolderPaths } from "../../utils/fileSystem";
-import { exportDataset, getImageUrl, readTextFileSafe, scanWorkspaceDatasets } from "../../services/api";
-import { annotationToYoloLine } from "../../utils/yolo";
+import { getImageUrl, scanWorkspaceDatasets, resplitDataset, resplitPreview } from "../../services/api";
 
 import "../../styles/AnnotationView.css";
 
 const DEFAULT_TRAIN_SPLIT_PERCENT = 80;
 
-function getImageSize(image) {
-  return new Promise((resolve, reject) => {
-    const previewImage = new Image();
-    previewImage.onload = () => resolve({ width: previewImage.naturalWidth, height: previewImage.naturalHeight });
-    previewImage.onerror = (error) => reject(error);
-    previewImage.src = image.url;
-  });
+// Зеркало backend _sanitize_dataset_name: имя папки -> имя подпапки в datasets/.
+function sanitizeDatasetName(name) {
+  const cleaned = (name || "dataset").trim().replace(/[^a-zA-Zа-яА-Я0-9._-]+/gu, "_").replace(/^[._-]+|[._-]+$/gu, "");
+  return cleaned || "dataset";
 }
 
-function parseClassIdsFromTxt(txtContent) {
-  if (!txtContent) return [];
-  return txtContent.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean).map((line) => Number(line.split(/\s+/u)[0])).filter((value) => Number.isInteger(value) && value >= 0);
-}
-
-function getSplitPreview(images, trainPercent, valPercent) {
-  const imageCount = images.length;
-  if (imageCount === 0) return { trainCount: 0, valCount: 0, testCount: 0 };
-
-  let remaining = imageCount;
-
-  // Приоритет 1: Train
-  let trainCount = Math.round(imageCount * (trainPercent / 100));
-  // Если задан %, но при округлении вышел 0 — берем минимум 1
-  if (trainPercent > 0 && trainCount === 0 && remaining > 0) trainCount = 1;
-  trainCount = Math.min(trainCount, remaining);
-  remaining -= trainCount;
-
-  // Приоритет 2: Val
-  let valCount = Math.round(imageCount * (valPercent / 100));
-  if (valPercent > 0 && valCount === 0 && remaining > 0) valCount = 1;
-  valCount = Math.min(valCount, remaining);
-  remaining -= valCount;
-
-  // Приоритет 3: Test (забирает всё, что осталось)
-  let testCount = remaining;
-
-  return { trainCount, valCount, testCount };
-}
-
-function AnnotationView({ collection, versions, currentVersionId, onCollectionUpdate }) {
+function AnnotationView({ collection, currentVersionId, onCollectionUpdate, datasetRefreshSignal }) {
   const [currentImage, setCurrentImage] = useState(null);
   const [showViewer, setShowViewer] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
 
-  const [useDatasetSource, setUseDatasetSource] = useState(false);
   const [datasetImages, setDatasetImages] = useState([]);
   const [datasetLoading, setDatasetLoading] = useState(false);
   const [datasetRefreshKey, setDatasetRefreshKey] = useState(0);
+  const [datasetPreview, setDatasetPreview] = useState(null);
 
   const annotationsManager = useAnnotations(collection?.workspacePath, collection?.projectClasses);
 
@@ -76,11 +42,9 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
     }
   }, [annotationsManager.classes, collection, onCollectionUpdate, annotationsManager.isReady]);
 
-  const currentVersion = versions.find((v) => v.id === currentVersionId);
-
-  // Загружаем файлы из datasets/ при включении режима или смене версии
+  // Загружаем файлы из datasets/ (единственный источник разметки)
   useEffect(() => {
-    if (!useDatasetSource || !collection) {
+    if (!collection) {
       setDatasetImages([]);
       return;
     }
@@ -98,18 +62,29 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
       })
       .catch((err) => { console.error("[datasets scan]", err); setDatasetImages([]); })
       .finally(() => setDatasetLoading(false));
-  }, [useDatasetSource, collection?.id, currentVersionId, datasetRefreshKey]);
+  }, [collection?.id, collection?.folders?.length, currentVersionId, datasetRefreshKey, datasetRefreshSignal]);
 
   const ignoredPaths = useMemo(() => {
     return collection?.folders ? getDisabledFolderPaths(collection.folders) : [];
   }, [collection?.folders]);
 
+  // datasets/{sanitize(folder.name)} -> folder.path (для реконструкции исходного пути датасетной картинки).
+  const folderPathByDataset = useMemo(() =>
+    new Map((collection?.folders || []).map((f) => [sanitizeDatasetName(f.name), f.path])),
+    [collection?.folders]
+  );
+
   const images = useMemo(() => {
-    if (useDatasetSource) return datasetImages;
-    const baseImages = currentVersion?.images || collection?.images || [];
-    if (ignoredPaths.length === 0) return baseImages;
-    return baseImages.filter(img => !ignoredPaths.some(ignoredPath => img.relativePath.startsWith(ignoredPath + '/')));
-  }, [useDatasetSource, datasetImages, collection?.images, currentVersion?.images, ignoredPaths]);
+    if (ignoredPaths.length === 0) return datasetImages;
+    // Скрываем картинки выключенных папок: реконструируем путь в дереве проекта (folder.path / originalPath).
+    return datasetImages.filter((img) => {
+      const datasetName = (img.relativePath || "").split("/")[0];
+      const folderPath = folderPathByDataset.get(datasetName);
+      if (!folderPath || !img.originalPath) return true;
+      const fullPath = `${folderPath}/${img.originalPath}`;
+      return !ignoredPaths.some((p) => fullPath === p || fullPath.startsWith(p + "/"));
+    });
+  }, [datasetImages, ignoredPaths, folderPathByDataset]);
 
   const galleryImages = images.map((image) => ({
     ...image,
@@ -124,10 +99,51 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
   const thumb1 = trainSplitPercent; 
   const thumb2 = trainSplitPercent + valSplitPercent;
   
-  const { trainCount, valCount, testCount } = useMemo(() => 
-    getSplitPreview(images, trainSplitPercent, valSplitPercent), 
-    [images, trainSplitPercent, valSplitPercent]
-  );
+  // Реальные числа сплита: для фото/видео — гипотетический респлит (бэк знает videoGroup),
+  // для импортированных датасетов — ФАКТИЧЕСКИЙ сплит (мы их не пересобираем, разбивка инвариантна).
+  useEffect(() => {
+    if (!collection) { setDatasetPreview(null); return; }
+    const activeFolders = (collection.folders || []).filter((f) => f.isEnabled);
+    if (activeFolders.length === 0) { setDatasetPreview(null); return; }
+    const timer = setTimeout(async () => {
+      try {
+        const sum = { trainCount: 0, valCount: 0, testCount: 0 };
+        const toPreview = [];
+        for (const folder of activeFolders) {
+          if (folder.folderType === "imported_dataset") {
+            const dsName = sanitizeDatasetName(folder.name);
+            for (const img of datasetImages) {
+              if ((img.relativePath || "").split("/")[0] !== dsName) continue;
+              if (img.split === "train") sum.trainCount++;
+              else if (img.split === "val") sum.valCount++;
+              else if (img.split === "test") sum.testCount++;
+            }
+          } else {
+            toPreview.push(folder);
+          }
+        }
+        const results = await Promise.all(toPreview.map((folder) =>
+          resplitPreview({
+            workspacePath: collection.workspacePath,
+            datasetName: folder.name,
+            trainPercent: trainSplitPercent,
+            valPercent: valSplitPercent,
+            testPercent: testSplitPercent,
+          }).catch(() => null)
+        ));
+        for (const r of results) {
+          if (!r?.split_counts) continue;
+          sum.trainCount += r.split_counts.train || 0;
+          sum.valCount += r.split_counts.val || 0;
+          sum.testCount += r.split_counts.test || 0;
+        }
+        setDatasetPreview(sum);
+      } catch { setDatasetPreview(null); }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [collection?.workspacePath, collection?.folders, datasetImages, trainSplitPercent, valSplitPercent, testSplitPercent, datasetRefreshKey, datasetRefreshSignal]);
+
+  const { trainCount, valCount, testCount } = datasetPreview || { trainCount: 0, valCount: 0, testCount: 0 };
 
   // Обработка движения ползунков с "проталкиванием"
   const handleThumbChange = (index, value) => {
@@ -176,95 +192,33 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
     });
   };
 
-  const classesById = useMemo(() => new Map(annotationsManager.classes.map((item, index) => [item.id, index])), [annotationsManager.classes]);
-
-  async function handleSaveDataset(splitMode = "split") {
-    if (!collection || images.length === 0) return;
-
+  // Пересобирает сплит уже импортированных датасетов под текущие % (без потери разметки).
+  async function handleResplit() {
+    if (!collection) return;
+    // Импортированные датасеты не трогаем — сохраняем исходный train/val/test автора.
+    const activeFolders = (collection.folders || []).filter((f) => f.isEnabled && f.folderType !== "imported_dataset");
+    if (activeFolders.length === 0) { setSaveMessage("Нет папок для пересборки (импортированные датасеты не пересобираются)."); return; }
     try {
       setIsSaving(true);
       setSaveMessage("");
-      const items = [];
-      const allUsedClassIds = new Set();
-
-      for (const image of images) {
-        const imageId = image.uuid || image.relativePath || image.id;
-        let finalYoloLines = "";
-
-        const drawnAnnotations = annotationsManager.getAnnotationsByImage(imageId);
-        
-        if (drawnAnnotations.length > 0 || annotationsManager.wasImageOpened(imageId)) {
-          const size = await getImageSize(image);
-          finalYoloLines = drawnAnnotations.map(ann => {
-            const classIndex = classesById.get(ann.classId);
-            if (classIndex != null) allUsedClassIds.add(classIndex);
-            return annotationToYoloLine(ann, classIndex, size.width, size.height);
-          }).filter(Boolean).join("\n");
-        } else {
-          let existingTxt = image.annotationText || "";
-          if (image.annotationFile) {
-            const filePath = image.annotationFile.absolute_path || image.annotationFile.absolutePath;
-            if (filePath) {
-              const fromFile = await readTextFileSafe(filePath);
-              existingTxt = fromFile || image.annotationText || "";
-            }
-          }
-          finalYoloLines = existingTxt;
-          parseClassIdsFromTxt(existingTxt).forEach(id => allUsedClassIds.add(id));
-        }
-
-        items.push({
-          absolutePath: image.absolutePath || image.file?.absolute_path,
-          relativePath: image.relativePath,
-          annotationTxt: finalYoloLines,
-        });
-      }
-
-      const classNames = [...annotationsManager.classes.map((item) => item.name)];
-      const activeFolders = collection.folders ? collection.folders.filter(f => f.isEnabled) : [];
-      
-      if (activeFolders.length === 0) {
-        setSaveMessage("Нет активных папок для сохранения.");
-        setIsSaving(false);
-        return;
-      }
-
-      let foldersSaved = 0;
-      let lastResponse = null;
-
+      let done = 0;
       for (const folder of activeFolders) {
-        const folderItemsRaw = items.filter(item => item.relativePath.startsWith(folder.path + '/') || item.relativePath === folder.path);
-        if (folderItemsRaw.length === 0) continue;
-
-        const folderItemsCleaned = folderItemsRaw.map(item => {
-          let cleanPath = item.relativePath;
-          if (cleanPath.startsWith(folder.path + '/')) cleanPath = cleanPath.substring(folder.path.length + 1);
-          else if (cleanPath === folder.path) cleanPath = cleanPath.split('/').pop();
-          return { ...item, relativePath: cleanPath };
-        });
-
-        lastResponse = await exportDataset({
-          collectionName: collection.name,
-          workspacePath: collection.workspacePath,
-          subFolderName: folder.name, 
-          classes: classNames,
-          items: folderItemsCleaned,
-          trainPercent: trainSplitPercent,
-          valPercent: valSplitPercent,    // Добавлено
-          testPercent: testSplitPercent,  // Добавлено
-          splitMode: splitMode
-        });
-        foldersSaved++;
+        try {
+          await resplitDataset({
+            workspacePath: collection.workspacePath,
+            datasetName: folder.name,
+            trainPercent: trainSplitPercent,
+            valPercent: valSplitPercent,
+            testPercent: testSplitPercent,
+          });
+          done++;
+        } catch (err) {
+          console.error(`Resplit "${folder.name}":`, err);
+        }
       }
-
-      if (foldersSaved > 0 && lastResponse) {
-        setSaveMessage(`Успешно! Экспортировано папок: ${foldersSaved}`);
-      } else {
-        setSaveMessage("Не найдено изображений для экспорта в активных папках.");
-      }
-    } catch (error) {
-      console.error(error);
-      setSaveMessage(`Ошибка сохранения: ${error.message}`);
+      setSaveMessage(done > 0 ? `Сплит пересобран: ${done}` : "Не удалось пересобрать сплит.");
+      setDatasetRefreshKey((k) => k + 1);
+      setCurrentImage(null);
     } finally {
       setIsSaving(false);
     }
@@ -308,35 +262,11 @@ function AnnotationView({ collection, versions, currentVersionId, onCollectionUp
           <h2>{collection.name}</h2>
           <div className="version-info">
             Всего изображений: {datasetLoading ? "..." : images.length}
-            {useDatasetSource && !datasetLoading && (
-              <span className="source-badge">из datasets/</span>
-            )}
           </div>
         </div>
         <div className="annotation-actions" style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          <label className="dataset-source-toggle" title="Показывать файлы из папки datasets/ вместо исходных файлов проекта">
-            <input
-              type="checkbox"
-              checked={useDatasetSource}
-              onChange={e => { setUseDatasetSource(e.target.checked); setCurrentImage(null); }}
-            />
-            <span>Из datasets/</span>
-          </label>
-          {useDatasetSource && (
-            <button
-              className="action-button secondary"
-              onClick={() => { setDatasetRefreshKey(k => k + 1); setCurrentImage(null); }}
-              disabled={datasetLoading}
-              title="Обновить список файлов из datasets/"
-            >
-              {datasetLoading ? "..." : "↻"}
-            </button>
-          )}
-          <button className="action-button secondary" onClick={() => handleSaveDataset("flat")} disabled={isSaving || images.length === 0}>
-            {isSaving ? "Сохранение..." : "Сохранить (Без сплита)"}
-          </button>
-          <button className="action-button primary" onClick={() => handleSaveDataset("split")} disabled={isSaving || images.length === 0}>
-            {isSaving ? "Сохранение..." : "Сохранить"}
+          <button className="action-button primary" onClick={handleResplit} disabled={isSaving || images.length === 0} title="Перераспределить данные по train/val/test под текущие проценты (разметка сохраняется)">
+            {isSaving ? "Пересборка..." : "Пересобрать сплит"}
           </button>
         </div>
       </div>
