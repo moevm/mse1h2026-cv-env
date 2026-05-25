@@ -95,7 +95,14 @@ function App() {
 
     setVersionsLoading(true);
     listDatasetVersions(workspacePath)
-      .then(data => setVersions(data.versions || []))
+      .then(data => {
+        const fetchedVersions = data.versions || [];
+        setVersions(fetchedVersions);
+        // Автоматически выбираем первую доступную версию, если currentVersionId равен null
+        if (fetchedVersions.length > 0) {
+          setCurrentVersionId(fetchedVersions[0].id);
+        }
+      })
       .catch(() => setVersions([]))
       .finally(() => setVersionsLoading(false));
 
@@ -394,7 +401,7 @@ function App() {
       case "dataset": return <DatasetView key={currentCollectionId} collection={currentCollection} versions={versions} currentVersionId={currentVersionId} versionsLoading={versionsLoading} onCreateVersion={handleCreateVersion} onSelectVersion={handleSelectVersion} onDeleteVersion={handleDeleteVersion} onUpdateSplit={()=>{}} onSync={handleSyncAndRefresh} />;
       case "annotation": return <AnnotationView key={currentCollectionId} collection={currentCollection} versions={versions} currentVersionId={currentVersionId} onCollectionUpdate={updateCollection} datasetRefreshSignal={datasetRefreshSignal} />;
       case "augmentation": return <AugmentationView key={currentCollectionId} collection={currentCollection} versions={versions} currentVersionId={currentVersionId} augVersions={augVersions} currentAugVersionId={currentAugVersionId} augVersionsLoading={augVersionsLoading} onCreateAugVersion={handleCreateAugVersion} onSelectAugVersion={handleSelectAugVersion} onDeleteAugVersion={handleDeleteAugVersion} />;
-      case "training": return <TrainingView key={currentCollectionId} collection={currentCollection} currentVersionId={currentVersionId} />;
+      case "training": return <TrainingView key={currentCollectionId} collection={currentCollection} currentVersionId={currentVersionId} versions={versions} />;
       case "experiments": return <ExperimentsView key={currentCollectionId} collection={currentCollection} />;
       default: return null;
     }
