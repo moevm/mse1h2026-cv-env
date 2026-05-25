@@ -15,6 +15,7 @@ from core.paths import get_project_paths, ensure_project_directories
 from schemas.dataset_schema import ExportPayload, AutosavePayload, SaveVersionPayload, SwitchVersionPayload, ImportDatasetPayload, ResplitPayload, SyncAppendPayload
 from services import version_service
 from services.project_service import scan_dataset_structure, load_project_workspace
+from services.version_service import get_version_stats
 
 router = APIRouter(prefix="/api/datasets", tags=["Datasets"])
 
@@ -766,3 +767,14 @@ def get_dataset_file(file_path: str, workspace_path: str = Query(None)):
     if not full_path.startswith(os.path.abspath(datasets_dir)): raise HTTPException(status_code=400, detail="Некорректный путь")
     if not os.path.isfile(full_path): raise HTTPException(status_code=404, detail="Файл не найден")
     return FileResponse(full_path, media_type=_detect_media_type(full_path))
+    
+@router.get("/versions/{version_id}/stats")
+def get_version_stats(version_id: str, workspace_path: str = Query(...)):
+    """Возвращает статистику по указанной версии датасета."""
+    try:
+        stats = version_service.get_version_stats(workspace_path, version_id)
+        return stats
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
