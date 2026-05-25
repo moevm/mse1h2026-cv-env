@@ -1,8 +1,0 @@
-ultralytics
-fastapi
-uvicorn
-pydantic
-pyyaml
-websockets
-python-dotenv
-python-multipart
