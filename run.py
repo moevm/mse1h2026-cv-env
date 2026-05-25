@@ -34,7 +34,7 @@ def main():
         p_frontend = subprocess.Popen(frontend_cmd, cwd=frontend_dir, shell=use_shell)
         processes.append(p_frontend)
 
-        print("\n Нажмите Ctrl+C для остановки...\n")
+        print("\nНажмите Ctrl+C для остановки...\n")
 
         while True:
             time.sleep(1)

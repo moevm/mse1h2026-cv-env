@@ -71,6 +71,7 @@ function Canvas({
     const img = imageRef.current;
     if (!canvas || !img) return;
 
+    // Внутренний размер холста ВСЕГДА равен оригинальному разрешению картинки
     canvas.width = img.width;
     canvas.height = img.height;
 
@@ -85,10 +86,7 @@ function Canvas({
     const ctx = canvas.getContext("2d");
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    ctx.save();
-
-    ctx.scale(zoom, zoom);
-
+    // Рисуем картинку в оригинальном размере 1:1 (масштабирование сделает CSS)
     ctx.drawImage(img, 0, 0, img.width, img.height);
 
     annotations.forEach((annotation) => {
@@ -96,11 +94,11 @@ function Canvas({
       const isSelected = selectedForEdit?.id === annotation.id;
 
       ctx.strokeStyle = color;
+      // Корректируем толщину линии под зум, чтобы она оставалась тонкой на экране
       ctx.lineWidth = isSelected ? 5 / zoom : 3 / zoom; 
       ctx.fillStyle = color + "33";
 
       if (annotation.type === "rectangle") {
-        // Rectangle
         ctx.strokeRect(
           annotation.x,
           annotation.y,
@@ -108,17 +106,16 @@ function Canvas({
           annotation.height,
         );
 
-        // Label
+        // Метка класса
         const classObj = classes.find((c) => c.id === annotation.classId);
         const className = annotation.className || (classObj ? classObj.name : "Unknown");
         ctx.fillStyle = color;
-        ctx.font = `bold ${14 / zoom}px Arial`; // Адаптируем размер шрифта
+        ctx.font = `bold ${14 / zoom}px Arial`; 
         const textWidth = ctx.measureText(className).width;
         ctx.fillRect(annotation.x, annotation.y - 25 / zoom, textWidth + 10 / zoom, 20 / zoom);
         ctx.fillStyle = "white";
         ctx.fillText(className, annotation.x + 5 / zoom, annotation.y - 10 / zoom);
       } else if (annotation.type === "polygon") {
-        // Polygon
         ctx.beginPath();
         ctx.moveTo(annotation.points[0].x, annotation.points[0].y);
         for (let i = 1; i < annotation.points.length; i++) {
@@ -128,7 +125,7 @@ function Canvas({
         ctx.stroke();
         ctx.fill();
 
-        // Label
+        // Метка класса для полигона
         const classObj = classes.find((c) => c.id === annotation.classId);
         const className = annotation.className || (classObj ? classObj.name : "Unknown");
         const center = annotation.points.reduce(
@@ -152,7 +149,7 @@ function Canvas({
       }
     });
 
-    // drawing rectangle in process
+    // Отрисовка прямоугольника в процессе создания
     if (currentRect && currentTool === "rectangle") {
       ctx.strokeStyle = "#3498db";
       ctx.lineWidth = 2 / zoom;
@@ -166,6 +163,7 @@ function Canvas({
       ctx.setLineDash([]);
     }
 
+    // Отрисовка полигона в процессе создания
     if (currentPolygon.length > 0 && currentTool === "polygon") {
       ctx.strokeStyle = "#3498db";
       ctx.lineWidth = 2 / zoom;
@@ -207,8 +205,6 @@ function Canvas({
 
       ctx.setLineDash([]);
     }
-
-    ctx.restore();
   };
 
   useEffect(() => {
@@ -229,13 +225,11 @@ function Canvas({
     
     const rect = canvas.getBoundingClientRect();
     
+    // Переводит экранные координаты мыши строго в пиксели оригинального разрешения картинки
     const canvasX = (e.clientX - rect.left) * (canvas.width / rect.width);
     const canvasY = (e.clientY - rect.top) * (canvas.height / rect.height);
     
-    return {
-      x: canvasX,
-      y: canvasY,
-    };
+    return { x: canvasX, y: canvasY };
   };
 
   const handleMouseDown = (e) => {
@@ -270,6 +264,7 @@ function Canvas({
   };
 
   const getCursor = () => {
+    if (currentTool === "zoom") return "zoom-in";
     if (currentTool) return "crosshair";
     if (selectedForEdit) return "move";
     return "default";
@@ -293,6 +288,9 @@ function Canvas({
         cursor: getCursor(),
         width: displayWidth,
         height: displayHeight,
+        maxWidth: "none",    
+        maxHeight: "none",   
+        margin: "auto"       
       }}
     />
   );
