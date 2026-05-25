@@ -20,15 +20,16 @@ const NewExperimentModal = ({
   const formatModelLabel = (model) => {
     const path = model.value;
     const originalLabel = model.label;
-    if (!path) return originalLabel;
+    if(originalLabel.trim() !== '(best.pt)') return originalLabel;
     
     const parts = path.split(/[\\\/]/);
     if (parts.length < 2) return originalLabel;
     
     const fileName = parts[parts.length - 1];
     const parentFolder = parts[parts.length - 2];
+    const trainName = parts[parts.length - 3];
 
-    return `${parentFolder}/${fileName}`;
+    return `${trainName} (${fileName})`;
   };
 
   const enhancedModels = useMemo(() => {
