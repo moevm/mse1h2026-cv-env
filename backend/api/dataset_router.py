@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse
 from core.paths import get_project_paths, ensure_project_directories
 from schemas.dataset_schema import ExportPayload, AutosavePayload, SaveVersionPayload, SwitchVersionPayload, ImportDatasetPayload
 from services import version_service
-from services.project_service import scan_dataset_structure
+from services.project_service import scan_dataset_structure, load_project_workspace
 from services.version_service import get_version_stats
 
 router = APIRouter(prefix="/api/datasets", tags=["Datasets"])
