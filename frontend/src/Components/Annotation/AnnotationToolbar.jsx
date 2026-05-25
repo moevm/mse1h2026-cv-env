@@ -3,9 +3,6 @@ import "../../styles/ImageAnnotator.css";
 function AnnotationToolbar({
   currentTool,
   onToolSelect,
-  onZoomIncr,
-  onZoomDecr,
-  onApprove,
 }) {
   return (
     <div className="annotation-toolbar">
@@ -61,26 +58,35 @@ function AnnotationToolbar({
           </svg>
         </button>
 
-        <button 
-          className="tool-button" 
-          onClick={(e) => {
-            e.stopPropagation();
-            onZoomIncr();
-          }} 
-          title="Масштаб +"
+        <button
+          className={`tool-button ${currentTool === "zoom" ? "active" : ""}`}
+          onClick={() =>
+            onToolSelect(currentTool === "zoom" ? null : "zoom")
+          }
+          title="Лупа (ЛКМ — увеличить, ПКМ — уменьшить)"
         >
-          +
-        </button>
-
-        <button 
-          className="tool-button" 
-          onClick={(e) => {
-            e.stopPropagation();
-            onZoomDecr();
-          }} 
-          title="Масштаб -"
-        >
-          -
+          <svg
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <circle
+              cx="11"
+              cy="11"
+              r="6"
+              stroke="currentColor"
+              strokeWidth="2"
+              fill="none"
+            />
+            <path
+              d="M16 16L22 22"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+            />
+          </svg>
         </button>
       </div>
     </div>

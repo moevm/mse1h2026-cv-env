@@ -33,7 +33,11 @@ function ImageAnnotator({
   const [selectedForEdit, setSelectedForEdit] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  
   const [zoom, setZoom] = useState(1);
+  const [minZoom, setMinZoom] = useState(1);
+
+  const zoomCenterRef = useRef(null);
 
   const currentImageAnnotations = useMemo(() => annotations.filter((a) => a.imageId === imageId), [annotations, imageId]);
 
@@ -103,6 +107,68 @@ function ImageAnnotator({
     return () => clearTimeout(timer);
   }, [currentImageAnnotations]);
 
+  // Расчет масштаба для полного вписывания картинки в контейнер
+  useEffect(() => {
+    if (!imageUrl) return;
+    const img = new Image();
+    img.onload = () => {
+      const container = document.querySelector(".canvas-container");
+      if (container) {
+        const containerWidth = container.clientWidth - 40; 
+        const containerHeight = container.clientHeight - 40;
+        const fitZoom = Math.min(containerWidth / img.width, containerHeight / img.height);
+        
+        const baseZoom = Math.min(1, fitZoom); 
+        setZoom(baseZoom);
+        setMinZoom(baseZoom); 
+      }
+    };
+    img.src = imageUrl;
+  }, [imageUrl]);
+
+  // Корректировка скролла относительно стабильной обертки
+  useEffect(() => {
+    if (zoomCenterRef.current) {
+      const { x, y, targetViewportX, targetViewportY } = zoomCenterRef.current;
+      zoomCenterRef.current = null;
+
+      const container = document.querySelector(".canvas-container");
+      const wrapper = container?.querySelector(".canvas-layout-wrapper");
+      if (container && wrapper) {
+        requestAnimationFrame(() => {
+          const newContentX = wrapper.offsetLeft + x * zoom;
+          const newContentY = wrapper.offsetTop + y * zoom;
+          
+          container.scrollLeft = newContentX - targetViewportX;
+          container.scrollTop = newContentY - targetViewportY;
+        });
+      }
+    }
+  }, [zoom]);
+
+  const handleZoomAtPoint = useCallback((coords, isZoomIn) => {
+    const oldZoom = zoom;
+    let newZoom = isZoomIn ? oldZoom + 0.2 : oldZoom - 0.2;
+    
+    newZoom = Math.max(minZoom, Math.min(newZoom, 4));
+
+    if (oldZoom === newZoom) return;
+
+    const container = document.querySelector(".canvas-container");
+    const wrapper = container?.querySelector(".canvas-layout-wrapper");
+    if (container && wrapper) {
+      const oldContentX = wrapper.offsetLeft + coords.x * oldZoom;
+      const oldContentY = wrapper.offsetTop + coords.y * oldZoom;
+      
+      const targetViewportX = oldContentX - container.scrollLeft;
+      const targetViewportY = oldContentY - container.scrollTop;
+
+      zoomCenterRef.current = { x: coords.x, y: coords.y, targetViewportX, targetViewportY };
+    }
+
+    setZoom(newZoom);
+  }, [zoom, minZoom]);
+
   const findAnnotationAtPoint = useCallback((point) => {
       for (let i = currentImageAnnotations.length - 1; i >= 0; i--) {
         const ann = currentImageAnnotations[i];
@@ -165,7 +231,9 @@ function ImageAnnotator({
 
   const handleClick = useCallback((e, coords) => {
       if (currentTool) {
-        if (currentTool === "polygon") {
+        if (currentTool === "zoom") {
+          handleZoomAtPoint(coords, true);
+        } else if (currentTool === "polygon") {
           const newPolygon = [...currentPolygon, coords];
           setCurrentPolygon(newPolygon);
           if (newPolygon.length >= 3) {
@@ -182,7 +250,7 @@ function ImageAnnotator({
       } else {
         setSelectedForEdit(findAnnotationAtPoint(coords) || null);
       }
-    }, [currentTool, currentPolygon, findAnnotationAtPoint, imageId]);
+    }, [currentTool, currentPolygon, findAnnotationAtPoint, imageId, handleZoomAtPoint]);
 
   const handleDoubleClick = useCallback((e, coords) => {
       if (selectedForEdit && window.confirm("Удалить выделенную область?")) {
@@ -193,9 +261,14 @@ function ImageAnnotator({
 
   const handleContextMenu = useCallback((e, coords) => {
       e.preventDefault();
-      if (currentTool === "polygon" && currentPolygon.length > 0) setCurrentPolygon((prev) => prev.slice(0, -1));
-      else if (selectedForEdit) setSelectedForEdit(null);
-    }, [currentTool, currentPolygon, selectedForEdit]);
+      if (currentTool === "zoom") {
+        handleZoomAtPoint(coords, false);
+      } else if (currentTool === "polygon" && currentPolygon.length > 0) {
+        setCurrentPolygon((prev) => prev.slice(0, -1));
+      } else if (selectedForEdit) {
+        setSelectedForEdit(null);
+      }
+    }, [currentTool, currentPolygon, selectedForEdit, handleZoomAtPoint]);
 
   const handleMouseLeave = useCallback(() => {
     if (isDrawing && currentTool === "rectangle") { setIsDrawing(false); setCurrentRect(null); }
@@ -221,59 +294,29 @@ function ImageAnnotator({
     }, [selectedAnnotation, addClass, addAnnotation]);
 
   const handleCancelAnnotation = useCallback(() => { setShowPopup(false); setSelectedAnnotation(null); }, []);
-  
-  const handleZoomIn = useCallback(() => {
-    const container = document.querySelector(".canvas-container");
-    if (container) {
-      const oldZoom = zoom;
-      const newZoom = Math.min(zoom + 0.2, 4);
-      const scale = newZoom / oldZoom;
-      
-      const centerX = container.clientWidth / 2;
-      const centerY = container.clientHeight / 2;
-      container.scrollLeft = (container.scrollLeft + centerX) * scale - centerX;
-      container.scrollTop = (container.scrollTop + centerY) * scale - centerY;
-      
-      setZoom(newZoom);
-    }
-  }, [zoom]);
-
-  const handleZoomOut = useCallback(() => {
-    const container = document.querySelector(".canvas-container");
-    if (container) {
-      const oldZoom = zoom;
-      const newZoom = Math.max(zoom - 0.2, 0.4);
-      const scale = newZoom / oldZoom;
-      
-      const centerX = container.clientWidth / 2;
-      const centerY = container.clientHeight / 2;
-      container.scrollLeft = (container.scrollLeft + centerX) * scale - centerX;
-      container.scrollTop = (container.scrollTop + centerY) * scale - centerY;
-      
-      setZoom(newZoom);
-    }
-  }, [zoom]);
 
   return (
     <div className="image-annotator">
       <div className="annotator-header"><h3>{imageName}</h3><button className="close-button" onClick={onClose}>×</button></div>
       <div className="annotator-main">
-        <div className="canvas-container">
-          <Canvas
-            imageUrl={imageUrl} annotations={currentImageAnnotations} classes={classes} getClassColor={getClassColor}
-            selectedForEdit={selectedForEdit} currentRect={currentRect} currentPolygon={currentPolygon}
-            currentTool={currentTool} mousePosition={mousePosition} onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onClick={handleClick}
-            onDoubleClick={handleDoubleClick} onContextMenu={handleContextMenu} onMouseLeave={handleMouseLeave} 
-            zoom={zoom}
-            setZoom={setZoom} 
-          />
+        {/* Инлайново нейтрализуем опасное центрирование Flexbox из CSS файлов */}
+        <div className="canvas-container" style={{ justifyContent: "flex-start", alignItems: "flex-start" }}>
+          {/* Стабильный координатный контейнер-обертка */}
+          <div className="canvas-layout-wrapper" style={{ margin: "auto", position: "relative" }}>
+            <Canvas
+              imageUrl={imageUrl} annotations={currentImageAnnotations} classes={classes} getClassColor={getClassColor}
+              selectedForEdit={selectedForEdit} currentRect={currentRect} currentPolygon={currentPolygon}
+              currentTool={currentTool} mousePosition={mousePosition} onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onClick={handleClick}
+              onDoubleClick={handleDoubleClick} onContextMenu={handleContextMenu} onMouseLeave={handleMouseLeave} 
+              zoom={zoom}
+              setZoom={setZoom} 
+            />
+          </div>
         </div>
         <AnnotationToolbar 
           currentTool={currentTool} 
           onToolSelect={setCurrentTool} 
-          onZoomIncr={handleZoomIn} 
-          onZoomDecr={handleZoomOut} 
         />
       </div>
       {showPopup && <AnnotationPopup position={popupPosition} classes={classes} onSave={handleSaveAnnotation} onCancel={handleCancelAnnotation} />}
