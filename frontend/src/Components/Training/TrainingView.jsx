@@ -15,7 +15,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
 
-function TrainingView({ collection, currentVersionId }) {
+function TrainingView({ collection, currentVersionId, versions = [] }) {
   // --- Локальные состояния, не связанные с активными тренировками ---
   const [isLoading, setIsLoading] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
@@ -230,7 +230,7 @@ function TrainingView({ collection, currentVersionId }) {
                     ) : history.map((row, idx) => {
                       const f1 = row.precision && row.recall && (row.precision + row.recall) > 0
                         ? 2 * (row.precision * row.recall) / (row.precision + row.recall)
-: null;
+                        : null;
                       return (
                         <tr key={idx} className={row.epoch === latest.epoch ? 'current-epoch' : ''}>
                           <td>{row.epoch}</td>
@@ -256,6 +256,32 @@ function TrainingView({ collection, currentVersionId }) {
       </div>
     );
   };
+
+  // --- Загрузка конфигураций при монтировании ---
+  useEffect(() => {
+    const loadConfigs = async () => {
+      if (!collection?.workspacePath) return;
+      try {
+        const trainingConfig = await getTrainingConfig(collection.workspacePath);
+        setParams(prev => ({
+          ...prev,
+          ...trainingConfig,
+          modelName: trainingConfig.modelName || ""
+        }));
+      } catch (error) {
+        trainingManager.addLog(`Ошибка загрузки конфигурации обучения: ${error.message}, используются значения по умолчанию`, "warning");
+      }
+
+      try {
+        const augConfig = await getAugmentations(collection.workspacePath);
+        setAugmentationParams(augConfig);
+      } catch (error) {
+        trainingManager.addLog(`Ошибка загрузки конфигурации аугментации: ${error.message}`, "error");
+      }
+    };
+
+    loadConfigs();
+  }, [collection?.workspacePath]);
 
   // --- Подписка на обновления trainingManager ---
   useEffect(() => {
@@ -289,27 +315,22 @@ function TrainingView({ collection, currentVersionId }) {
     }
   };
 
-  const handlePauseTraining = async (taskId) => {
+  const handlePauseTraining = async (taskId, modelIdentifier) => {
     try {
       await pauseTraining(taskId);
-      trainingManager.addLog(`Обучение поставлено на паузу`, "info");
+      trainingManager.addLog(`Обучение "${modelIdentifier}" поставлено на паузу`, "info");
     } catch (error) {
       trainingManager.addLog(`Ошибка паузы: ${error.message}`, "error");
     }
   };
 
-  const handleResumeTraining = async (taskId) => {
+  const handleResumeTraining = async (taskId, modelIdentifier) => {
     try {
       await resumeTraining(taskId);
-      trainingManager.addLog(`Обучение возобновлено`, "success");
+      trainingManager.addLog(`Обучение "${modelIdentifier}" возобновлено`, "success");
     } catch (error) {
       trainingManager.addLog(`Ошибка возобновления: ${error.message}`, "error");
     }
-  };
-
-  const handleRemoveTraining = (taskId, modelIdentifier) => {
-    trainingManager.removeTraining(taskId);
-    trainingManager.addLog(`Обучение "${modelIdentifier}" удалено из списка`, "info");
   };
 
   const clearLogs = () => {
@@ -376,7 +397,10 @@ function TrainingView({ collection, currentVersionId }) {
       return;
     }
 
-    const currentVersion = collection?.versions?.find(v => v.id === currentVersionId);
+    // Если currentVersionId равен null, берем самую первую доступную версию проекта по умолчанию
+    const currentVersion = versions?.find(v => v.id === currentVersionId) || versions?.[0];
+    const actualVersionId = currentVersion ? currentVersion.id : (currentVersionId || "");
+    const actualVersionName = currentVersion ? currentVersion.name : "Version None";
 
     const trainingData = {
       ...paramsWithoutModelName,
@@ -384,8 +408,8 @@ function TrainingView({ collection, currentVersionId }) {
       dataset: {
         id: collection.id,
         name: collection.name,
-        versionId: currentVersionId || "",
-        versionName: currentVersion?.name || `Version ${currentVersionId || "unknown"}`,
+        versionId: actualVersionId,
+        versionName: actualVersionName,
         workspace_path: collection.workspacePath,
         active_folders: activeFolderNames,
         classes: [],
@@ -406,7 +430,8 @@ function TrainingView({ collection, currentVersionId }) {
         taskId: taskId,
         modelIdentifier: modelIdentifier,
         datasetName: collection.name,
-        versionName: currentVersion?.name || `Version ${currentVersionId || "unknown"}`,
+        versionId: actualVersionId, 
+        versionName: actualVersionName,
         model: params.model,
         status: 'pending',
         progress: 0,
@@ -517,8 +542,7 @@ function TrainingView({ collection, currentVersionId }) {
               <option value="cpu">CPU</option>
               <option value="0">GPU 0</option>
               <option value="1">GPU 1</option>
-              <option value="-1">
-Auto-select most idle GPU</option>
+              <option value="-1">Auto-select most idle GPU</option>
             </select>
           </div>
           
@@ -648,84 +672,96 @@ Auto-select most idle GPU</option>
           <div className="no-active-trainings">Нет активных процессов обучения</div>
         ) : (
           <div className="trainings-list">
-            {activeTrainings.map((training) => (
-              <div key={training.taskId} className={`training-item ${metricsPanelOpen[training.taskId] ? 'open' : ''}`}>
-                <div className="training-header">
-                  <div className="training-info">
-                    <span className="training-name">{training.modelIdentifier}</span>
-                    <span className="training-dataset">
-                      на {training.datasetName}
-                      {training.versionName && ` / ${training.versionName}`}
-                    </span>
-                  </div>
-                  <span className={`status-badge status-${training.status}`}>
-                    {training.status === 'running' ? 'Выполняется' :
-                      training.status === 'paused' ? 'Пауза' :
-                        training.status === 'completed' ? 'Завершено' :
-                          training.status === 'failed' ? 'Ошибка' :
-                            training.status === 'stopped' ? 'Завершено' : training.status}
-                  </span>
-                </div>
-                <div className="training-details">
-                  <div className="detail-item"><span>Базовая модель: {training.model}</span></div>
-                  <div className="detail-item">
-                    <span>Статус: </span>
+            {activeTrainings.map((training) => {
+              // Умный поиск: ищем по ID или проверяем, входит ли ID версии в сырую текстовую строку versionName
+              const matchedVersion = versions?.find(v => {
+                if (training.versionId && v.id === training.versionId) return true;
+                if (training.dataset?.versionId && v.id === training.dataset.versionId) return true;
+                if (training.versionName && training.versionName.includes(v.id)) return true;
+                return false;
+              });
+
+              // Определяем имя для отображения
+              let displayVersion = matchedVersion ? matchedVersion.name : training.versionName;
+              if (!versions || versions.length === 0) {
+                displayVersion = "Version None";
+              } else if (!displayVersion || displayVersion.includes("unknown")) {
+                const currentRes = versions?.find(v => v.id === currentVersionId) || versions?.[0];
+                if (currentRes) displayVersion = currentRes.name;
+              }
+
+              return (
+                <div key={training.taskId} className={`training-item ${metricsPanelOpen[training.taskId] ? 'open' : ''}`}>
+                  <div className="training-header">
+                    <div className="training-info">
+                      <span className="training-name">{training.modelIdentifier}</span>
+                      <span className="training-dataset">
+                        на {training.datasetName}
+                        {displayVersion && ` / ${displayVersion}`}
+                      </span>
+                    </div>
                     <span className={`status-badge status-${training.status}`}>
                       {training.status === 'running' ? 'Выполняется' :
-                        training.status === 'completed' ? 'Завершено' :
-                          training.status === 'failed' ? 'Ошибка' :
-                            training.status === 'stopped' ? 'Завершено' : training.status}
+                        training.status === 'paused' ? 'Пауза' :
+                          training.status === 'completed' ? 'Завершено' :
+                            training.status === 'failed' ? 'Ошибка' :
+                              training.status === 'stopped' ? 'Завершено' : training.status}
                     </span>
                   </div>
-                  { training.totalEpochs && (
-                    <div className="epoch-actions-row">
-                      <div className="detail-item"><span>Эпоха: {training.currentEpoch}/{training.totalEpochs}</span></div>
-                      <div className="epoch-actions">
-                        {training.status === 'running' && (
-                          <button className="pause-training-btn" onClick={() => handlePauseTraining(training.taskId)}>Пауза</button>
-                        )}
-                        {training.status === 'paused' && (
-                          <button className="resume-training-btn" onClick={() => handleResumeTraining(training.taskId)}>Возобновить</button>
-                        )}
-                        <button className="stop-training-btn" onClick={() => handleStopTraining(training.taskId, training.modelIdentifier)}>Завершить</button>
-                        <button
-                          className="metrics-toggle-btn"
-                          onClick={() => toggleMetricsPanel(training.taskId)}
-                        >
-                          {metricsPanelOpen[training.taskId] ? 'Скрыть метрики' : 'Показать метрики'}
-                        </button>
-                        <button
-                          className="remove-training-btn"
-                          onClick={() => handleRemoveTraining(training.taskId, training.modelIdentifier)}
-                          title="Удалить из списка"
-                        >
-                          🗑️
-                        </button>
+                  <div className="training-details">
+                    <div className="detail-item"><span>Базовая модель: {training.model}</span></div>
+                    <div className="detail-item">
+                      <span>Статус: </span>
+                      <span className={`status-badge status-${training.status}`}>
+                        {training.status === 'running' ? 'Выполняется' :
+                          training.status === 'completed' ? 'Завершено' :
+                            training.status === 'failed' ? 'Ошибка' :
+                              training.status === 'stopped' ? 'Завершено' : training.status}
+                      </span>
+                    </div>
+                    { training.totalEpochs && (
+                      <div className="epoch-actions-row">
+                        <div className="detail-item"><span>Эпоха: {training.currentEpoch}/{training.totalEpochs}</span></div>
+                        <div className="epoch-actions">
+                          {training.status === 'running' && (
+                            <button className="pause-training-btn" onClick={() => handlePauseTraining(training.taskId, training.modelIdentifier)}>Пауза</button>
+                          )}
+                          {training.status === 'paused' && (
+                            <button className="resume-training-btn" onClick={() => handleResumeTraining(training.taskId, training.modelIdentifier)}>Возобновить</button>
+                          )}
+                          <button className="stop-training-btn" onClick={() => handleStopTraining(training.taskId, training.modelIdentifier)}>Завершить</button>
+                          <button
+                            className="metrics-toggle-btn"
+                            onClick={() => toggleMetricsPanel(training.taskId)}
+                          >
+                            {metricsPanelOpen[training.taskId] ? 'Скрыть метрики' : 'Показать метрики'}
+                          </button>
+                        </div>
                       </div>
+                    )}
+                    <div className="progress-bar-container">
+                      <div className="progress-bar" style={{ width: `${training.progress || 0}%` }}></div>
+                      <span className="progress-text">{training.progress || 0}%</span>
+                    </div>
+                    {training.loss && (
+                      <div className="detail-item"><span>Loss: {training.loss.toFixed(4)}</span></div>
+                    )}
+                    {getKeyMetric(training) && (
+                      <div className="detail-item"><strong>{getKeyMetric(training).label}</strong> {getKeyMetric(training).value}</div>
+                    )}
+                    {getEstimatedRemaining(training) != null && (
+                      <div className="detail-item"><strong>Осталось:</strong> {formatDuration(getEstimatedRemaining(training))}</div>
+                    )}
+                    <div className="detail-item time-info"><span>Запущено: {new Date(training.startedAt).toLocaleTimeString()}</span></div>
+                  </div>
+                  {metricsPanelOpen[training.taskId] && metricsData[training.taskId] && (
+                    <div className="metrics-panel-container">
+                      {renderMetricsPanel(training, metricsData[training.taskId])}
                     </div>
                   )}
-                  <div className="progress-bar-container">
-                    <div className="progress-bar" style={{ width: `${training.progress || 0}%` }}></div>
-                    <span className="progress-text">{training.progress || 0}%</span>
-                  </div>
-                  {training.loss && (
-                    <div className="detail-item"><span>Loss: {training.loss.toFixed(4)}</span></div>
-                  )}
-                  {getKeyMetric(training) && (
-                    <div className="detail-item"><strong>{getKeyMetric(training).label}</strong> {getKeyMetric(training).value}</div>
-                  )}
-                  {getEstimatedRemaining(training) != null && (
-<div className="detail-item"><strong>Осталось:</strong> {formatDuration(getEstimatedRemaining(training))}</div>
-                  )}
-                  <div className="detail-item time-info"><span>Запущено: {new Date(training.startedAt).toLocaleTimeString()}</span></div>
                 </div>
-                {metricsPanelOpen[training.taskId] && metricsData[training.taskId] && (
-                  <div className="metrics-panel-container">
-                    {renderMetricsPanel(training, metricsData[training.taskId])}
-                  </div>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
