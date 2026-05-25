@@ -1,5 +1,16 @@
 import { getTrainingMetrics } from "./api";
 
+function snakeToCamel(obj) {
+  if (!obj || typeof obj !== 'object') return obj;
+  const newObj = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const camelKey = key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+    newObj[camelKey] = value;
+  }
+  return newObj;
+}
+
+
 class TrainingManager {
   constructor() {
     this.activeTrainings = new Map(); 
@@ -69,7 +80,7 @@ class TrainingManager {
   // --- Восстановление активных задач с бэкенда ---
   async initFromBackend() {
     try {
-      const response = await fetch("/api/training/active");
+      const response = await fetch("http://localhost:8000/api/training/active");
       if (!response.ok) return;
       const data = await response.json();
       for (const task of data.active_tasks) {
@@ -116,9 +127,10 @@ class TrainingManager {
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
+        const camelData = snakeToCamel(data);   // ← преобразуем
         const existing = this.activeTrainings.get(taskId);
         if (existing) {
-          const updated = { ...existing, ...data, lastUpdate: new Date() };
+          const updated = { ...existing, ...camelData, lastUpdate: new Date() };
           this.activeTrainings.set(taskId, updated);
           this.notify();
         }

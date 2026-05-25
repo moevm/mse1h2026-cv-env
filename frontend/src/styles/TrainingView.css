@@ -36,7 +36,7 @@
 
 .training-view .param-group {
   display: grid;
-  grid-template-columns: 120px 1fr;
+  grid-template-columns: 150px 1fr;  /* или minmax(130px, auto) 1fr */
   align-items: center;
   gap: 16px;
   padding: 12px 16px;
@@ -837,4 +837,14 @@
   }
 }
 
+.tooltip-icon {
+  color: #3498db;
+  cursor: help;
+  margin-left: 6px;
+  font-size: 14px;
+  font-weight: bold;
+}
 
+.tooltip-icon:hover {
+  color: #2980b9;
+}
