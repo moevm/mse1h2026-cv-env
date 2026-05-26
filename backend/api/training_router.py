@@ -12,7 +12,8 @@ from services.training_service import (
     validate_model_name,
     get_training_metrics,
     resume_training,
-    pause_training
+    pause_training,
+    training_tasks
 )
 
 
@@ -255,3 +256,23 @@ async def resume_training_endpoint(task_id: str):
     if not result:
         raise HTTPException(status_code=400, detail="Не удалось возобновить обучение")
     return {"status": "success", "task_id": task_id, "message": "Обучение возобновлено"}
+    
+@router.get("/active")
+async def list_active_tasks():
+    active = []
+    for task_id, task_info in training_tasks.items():
+        if task_info.status in ("running", "paused"):
+            active.append({
+                "task_id": task_id,
+                "status": task_info.status,
+                "progress": task_info.progress,
+                "current_epoch": task_info.current_epoch,
+                "total_epochs": task_info.total_epochs,
+                "model_identifier": task_info.model_identifier,
+                "dataset_name": task_info.dataset_name,
+                "version_name": task_info.version_name,
+                "model": task_info.model,
+                "started_at": task_info.started_at.isoformat() if task_info.started_at else None,
+                "loss": task_info.loss,
+            })
+    return {"active_tasks": active}

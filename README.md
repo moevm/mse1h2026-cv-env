@@ -2,22 +2,18 @@
 
 ## Установка и запуск
 
+0. Требования к системе:
+   - **Python 3.10+** (команда `python` должна быть доступна в терминале).
+   - **Node.js** версии **20.19+** (необходим для сборки фронтенда на Vite). 
+
 1. Установите зависимости:
    ```bash
-   pip install -r requirements.txt
+   python install.py
    ```
 
-2. Запустите бэкенд:
+2. Запустите:
    ```bash
-   cd backend
-   uvicorn main:app --reload
-   ```
-
-3. Запустите фронтенд:
-   ```bash
-   cd frontend
-   npm install
-   npm run dev
+   python run.py
    ```
 
 ## Проверка работоспособности
