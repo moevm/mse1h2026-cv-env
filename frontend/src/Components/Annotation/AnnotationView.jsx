@@ -26,7 +26,6 @@ function AnnotationView({ collection, currentVersionId, onCollectionUpdate, data
   const [datasetRefreshKey, setDatasetRefreshKey] = useState(0);
   const [datasetPreview, setDatasetPreview] = useState(null);
 
-  // --- СОСТОЯНИЕ ДЛЯ ОШИБОК ВАЛИДАЦИИ ---
   const [validationResults, setValidationResults] = useState({});
 
   const annotationsManager = useAnnotations(collection?.workspacePath, collection?.projectClasses);
@@ -212,7 +211,6 @@ function AnnotationView({ collection, currentVersionId, onCollectionUpdate, data
     }
   }
 
-  // --- ОБНОВЛЕННАЯ ИСПРАВЛЕННАЯ ЛОГИКА ПРОВЕРКИ АННОТАЦИЙ ---
   const handleCheckAnnotations = () => {
     if (!collection) return;
 
@@ -223,7 +221,7 @@ function AnnotationView({ collection, currentVersionId, onCollectionUpdate, data
       const imgId = img.uuid || img.relativePath || img.id;
       const errors = [];
 
-      // 1. Проверка на разметку без изображения (Stray TXT)
+      // 1. Проверка на разметку без изображения
       const isStrayTxt = img.isStrayTxt || (img.name && img.name.endsWith('.txt') && !img.url) || img.missingImage;
       if (isStrayTxt) {
         errors.push("Файл разметки *.txt существует, но само изображение отсутствует.");
@@ -231,11 +229,10 @@ function AnnotationView({ collection, currentVersionId, onCollectionUpdate, data
         return; 
       }
 
-      // 2. ИСПРАВЛЕНО ОКОНЧАТЕЛЬНО: Опираемся на флаг физического существования файла с бэкенда
+      // 2. Проверка на изображение без разметки (нет .txt)
       const hasLabelFile = Boolean(img.hasLabelFile); 
       const hasStateAnnotations = annotationsManager.getAnnotationsByImage(imgId).length > 0;
 
-      // Если файла .txt нет на диске И в текущей сессии фронтенда ничего не нарисовано
       if (!hasLabelFile && !hasStateAnnotations) {
         errors.push("Изображение без аннотаций (отсутствует файл разметки *.txt).");
       }
@@ -260,12 +257,12 @@ function AnnotationView({ collection, currentVersionId, onCollectionUpdate, data
           const w = parseFloat(parts[3]);
           const h = parseFloat(parts[4]);
 
-          // Проверяем существование класса
+          // Проверка существования класса
           if (isNaN(classIdx) || classIdx < 0 || classIdx >= classesCount) {
             errors.push(`Строка ${idx + 1}: Обнаружен неизвестный класс (индекс ${parts[0]}).`);
           }
 
-          // Проверяем нормализацию координат 0..1
+          // Проверка нормализации координат 0..1
           if (x < 0 || x > 1 || y < 0 || y > 1 || w < 0 || w > 1 || h < 0 || h > 1) {
             errors.push(`Строка ${idx + 1}: Координаты BBox выходят за пределы диапазона 0..1.`);
           }

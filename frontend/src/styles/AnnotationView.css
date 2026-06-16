@@ -402,13 +402,12 @@
   background-color: #d35400 !important;
 }
 
-/* Элемент галереи с ошибками валидации */
 .gallery-item.has-validation-errors {
   border: 2px solid #e74c3c !important;
   background-color: #fdf2f2 !important;
 }
 
-/* Стилизация сиротского TXT файла как заглушки */
+/* Заглушка */
 .gallery-item.stray-txt-item {
   background: repeating-linear-gradient(
     45deg,
@@ -420,7 +419,6 @@
   border: 2px dashed #e67e22 !important;
 }
 
-/* Бейдж ошибки вместо стандартной галочки */
 .validation-badge {
   position: absolute;
   top: 5px;
@@ -438,7 +436,6 @@
   z-index: 2;
 }
 
-/* Всплывающий тултип с описанием ошибок */
 .validation-tooltip {
   display: none;
   position: absolute;
@@ -457,7 +454,6 @@
   word-break: break-word;
 }
 
-/* Показ тултипа при ховере на элемент */
 .gallery-item:hover .validation-tooltip {
   display: block;
 }
@@ -475,7 +471,6 @@
   color: #f1c40f;
 }
 
-/* Делаем иконку предупреждения на карточке более интерактивной */
 .validation-badge {
   position: absolute;
   top: 5px;
@@ -500,7 +495,6 @@
   background-color: #c0392b;
 }
 
-/* ФОН ДЛЯ ПОПАПА ОШИБОК (Затемнение всего экрана) */
 .validation-modal-overlay {
   position: fixed;
   top: 0;
@@ -511,10 +505,9 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 2500; /* Ставим заведомо выше виртуальной сетки и остальных слоев */
+  z-index: 2500;
 }
 
-/* ОКНО ПОПАПА */
 .validation-modal-content {
   background-color: #ffffff;
   border-radius: 8px;
@@ -532,7 +525,6 @@
   to { opacity: 1; transform: scale(1) translateY(0); }
 }
 
-/* ШАПКА ПОПАПА */
 .validation-modal-header {
   background-color: #e74c3c;
   color: #ffffff;
@@ -567,7 +559,6 @@
   color: #f1c40f;
 }
 
-/* ТЕЛО С ОШИБКАМИ */
 .validation-modal-body {
   padding: 16px;
   max-height: 320px;
@@ -575,7 +566,6 @@
   background-color: #fafafa;
 }
 
-/* СТРОКА ОШИБКИ */
 .validation-modal-error-item {
   font-size: 13px;
   color: #2c3e50;

@@ -4,7 +4,6 @@ import "../../styles/AnnotationView.css";
 import "../../styles/AugmentationView.css";
 
 function ImageGallery ({ images, onImageClick, validationResults = {} }) {
-  // Состояние для хранения данных текущего открытого попапа с ошибками
   const [activeErrorPopup, setActiveErrorPopup] = useState(null);
 
   const COLUMN_WIDTH = 160;  
@@ -45,20 +44,18 @@ function ImageGallery ({ images, onImageClick, validationResults = {} }) {
                   className={`gallery-item ${image.isMarked ? "marked" : ""} ${hasErrors ? "has-validation-errors" : ""} ${isStray ? "stray-txt-item" : ""}`}
                   onClick={() => onImageClick(image)}
                 >
-                  {/* Зелёная птичка: если всё размечено и ошибок нет */}
                   {image.isMarked && !hasErrors && (
                     <div className="marked-badge" title="Изображение размечено">
                       ✓
                     </div>
                   )}
 
-                  {/* Значок предупреждения: теперь открывает интерактивный попап при клике */}
                   {hasErrors && (
                     <div 
                       className="validation-badge" 
                       title="Посмотреть ошибки разметки"
                       onClick={(e) => {
-                        e.stopPropagation(); // Останавливаем всплытие, чтобы не открывать ImageViewer
+                        e.stopPropagation();
                         setActiveErrorPopup({ name: image.name, list: errors });
                       }}
                     >
@@ -91,7 +88,6 @@ function ImageGallery ({ images, onImageClick, validationResults = {} }) {
         }}
       </AutoSizer>
 
-      {/* ИНТЕРАКТИВНЫЙ ПОПАП ОШИБОК (Рендерится вне Grid, обрезка overflow ему больше не страшна) */}
       {activeErrorPopup && (
         <div className="validation-modal-overlay" onClick={() => setActiveErrorPopup(null)}>
           <div className="validation-modal-content" onClick={(e) => e.stopPropagation()}>

@@ -95,7 +95,6 @@ def _collect_image_entries(dataset_name: str, dataset_dir: str, workspace_path: 
                 split = uuid_mapping.get(uid, {}).get("split")
                 label_file = labels_dir / f"{uid}.txt"
                 
-                # Фиксируем физическое существование файла на диске
                 has_label_file = label_file.exists()
                 annotation_text = _read_text_file(str(label_file)) if has_label_file else ""
                 
@@ -120,7 +119,6 @@ def _collect_image_entries(dataset_name: str, dataset_dir: str, workspace_path: 
             stored_image_path = image_path.relative_to(dataset_root).as_posix()
             label_path = (label_source / relative_in_group).with_suffix(".txt")
             
-            # Фиксируем физическое существование файла для старого формата
             has_label_file = label_path.is_file()
             annotation_text = _read_text_file(str(label_path)) if has_label_file else ""
             
@@ -323,7 +321,7 @@ def scan_workspace_datasets(workspace_path: str = Query(None)):
                         if f.get("uuid"):
                             existing_stems.add(f.get("uuid"))
 
-                # ПОИСК СИРОТСКИХ (.TXT БЕЗ СООТВЕТСТВУЮЩЕЙ КАРТИНКИ)
+                # txt без картинки
                 uuid_mapping = _load_uuid_mapping(subdir)
                 for split in ("train", "val", "test"):
                     labels_dir = subdir / split / "labels"
@@ -336,7 +334,6 @@ def scan_workspace_datasets(workspace_path: str = Query(None)):
                             
                             uid = txt_file.stem
                             
-                            # Проверяем, существует ли физически картинка с таким же именем
                             has_image = False
                             if images_dir.is_dir():
                                 for ext in IMAGE_EXTENSIONS:
@@ -344,12 +341,10 @@ def scan_workspace_datasets(workspace_path: str = Query(None)):
                                         has_image = True
                                         break
                             
-                            # Если картинки нет на диске и она не пришла из scan_dataset_structure
                             if not has_image and uid not in existing_stems:
                                 annotation_text = _read_text_file(str(txt_file))
                                 original_name = uuid_mapping.get(uid, {}).get("original_name", uid)
                                 
-                                # Добавляем виртуальную заглушку для фронтенда
                                 files.append({
                                     "name": f"{uid}.txt",
                                     "originalName": original_name,
@@ -357,9 +352,9 @@ def scan_workspace_datasets(workspace_path: str = Query(None)):
                                     "uuid": uid,
                                     "id": uid,
                                     "annotationText": annotation_text,
-                                    "isStrayTxt": True,      # Наш ключевой флаг проблемы
+                                    "isStrayTxt": True,
                                     "hasLabelFile": True,
-                                    "url": None,             # URL картинки отсутствует
+                                    "url": None,
                                     "size": txt_file.stat().st_size
                                 })
                                 existing_stems.add(uid)
