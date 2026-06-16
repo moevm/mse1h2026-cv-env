@@ -10,7 +10,6 @@ import "../../styles/AnnotationView.css";
 
 const DEFAULT_TRAIN_SPLIT_PERCENT = 80;
 
-// Зеркало backend _sanitize_dataset_name: имя папки -> имя подпапки в datasets/.
 function sanitizeDatasetName(name) {
   const cleaned = (name || "dataset").trim().replace(/[^a-zA-Zа-яА-Я0-9._-]+/gu, "_").replace(/^[._-]+|[._-]+$/gu, "");
   return cleaned || "dataset";
@@ -27,10 +26,15 @@ function AnnotationView({ collection, currentVersionId, onCollectionUpdate, data
   const [datasetRefreshKey, setDatasetRefreshKey] = useState(0);
   const [datasetPreview, setDatasetPreview] = useState(null);
 
+  const [validationResults, setValidationResults] = useState({});
+
   const annotationsManager = useAnnotations(collection?.workspacePath, collection?.projectClasses);
 
   useEffect(() => {
-    setCurrentImage(null); setShowViewer(false); setSaveMessage("");
+    setCurrentImage(null); 
+    setShowViewer(false); 
+    setSaveMessage("");
+    setValidationResults({}); 
   }, [collection?.id, currentVersionId]);
 
   useEffect(() => {
@@ -42,7 +46,6 @@ function AnnotationView({ collection, currentVersionId, onCollectionUpdate, data
     }
   }, [annotationsManager.classes, collection, onCollectionUpdate, annotationsManager.isReady]);
 
-  // Загружаем файлы из datasets/ (единственный источник разметки)
   useEffect(() => {
     if (!collection) {
       setDatasetImages([]);
@@ -56,7 +59,7 @@ function AnnotationView({ collection, currentVersionId, onCollectionUpdate, data
         setDatasetImages(files.map(f => ({
           ...f,
           absolutePath: f.absolute_path,
-          url: `${getImageUrl(f.absolute_path)}&_t=${cacheBuster}`,
+          url: f.absolute_path ? `${getImageUrl(f.absolute_path)}&_t=${cacheBuster}` : null,
           uuid: f.relativePath,
         })));
       })
@@ -68,7 +71,6 @@ function AnnotationView({ collection, currentVersionId, onCollectionUpdate, data
     return collection?.folders ? getDisabledFolderPaths(collection.folders) : [];
   }, [collection?.folders]);
 
-  // datasets/{sanitize(folder.name)} -> folder.path (для реконструкции исходного пути датасетной картинки).
   const folderPathByDataset = useMemo(() =>
     new Map((collection?.folders || []).map((f) => [sanitizeDatasetName(f.name), f.path])),
     [collection?.folders]
@@ -76,7 +78,6 @@ function AnnotationView({ collection, currentVersionId, onCollectionUpdate, data
 
   const images = useMemo(() => {
     if (ignoredPaths.length === 0) return datasetImages;
-    // Скрываем картинки выключенных папок: реконструируем путь в дереве проекта (folder.path / originalPath).
     return datasetImages.filter((img) => {
       const datasetName = (img.relativePath || "").split("/")[0];
       const folderPath = folderPathByDataset.get(datasetName);
@@ -95,12 +96,9 @@ function AnnotationView({ collection, currentVersionId, onCollectionUpdate, data
   const valSplitPercent = collection?.valSplitPercent ?? 10;
   const testSplitPercent = collection?.testSplitPercent ?? 10;
 
-  // Рассчитываем позиции ползунков (границы)
   const thumb1 = trainSplitPercent; 
   const thumb2 = trainSplitPercent + valSplitPercent;
   
-  // Реальные числа сплита: для фото/видео — гипотетический респлит (бэк знает videoGroup),
-  // для импортированных датасетов — ФАКТИЧЕСКИЙ сплит (мы их не пересобираем, разбивка инвариантна).
   useEffect(() => {
     if (!collection) { setDatasetPreview(null); return; }
     const activeFolders = (collection.folders || []).filter((f) => f.isEnabled);
@@ -145,22 +143,17 @@ function AnnotationView({ collection, currentVersionId, onCollectionUpdate, data
 
   const { trainCount, valCount, testCount } = datasetPreview || { trainCount: 0, valCount: 0, testCount: 0 };
 
-  // Обработка движения ползунков с "проталкиванием"
   const handleThumbChange = (index, value) => {
     let val = Math.max(0, Math.min(100, Number(value)));
     let newThumb1 = thumb1;
     let newThumb2 = thumb2;
-
     if (index === 1) {
       newThumb1 = val;
-      // Если левый ползунок заходит за правый — толкаем правый вперед
       if (newThumb1 > newThumb2) newThumb2 = newThumb1;
     } else {
       newThumb2 = val;
-      // Если правый ползунок заходит за левый — тянем левый назад
       if (newThumb2 < newThumb1) newThumb1 = newThumb2;
     }
-
     onCollectionUpdate?.(collection.id, {
       trainSplitPercent: newThumb1,
       valSplitPercent: newThumb2 - newThumb1,
@@ -168,23 +161,19 @@ function AnnotationView({ collection, currentVersionId, onCollectionUpdate, data
     });
   };
 
-  // Обработка ручного ввода (аналогичное проталкивание границ)
   const handleManualInput = (type, value) => {
     let numVal = Math.max(0, Math.min(100, Number(value) || 0));
     let newThumb1 = thumb1;
     let newThumb2 = thumb2;
-
     if (type === 'train') {
       newThumb1 = numVal;
       if (newThumb1 > newThumb2) newThumb2 = newThumb1;
     } else if (type === 'val') {
-      // При изменении VAL мы фиксируем левую границу и двигаем только правую
       newThumb2 = Math.min(100, newThumb1 + numVal);
     } else if (type === 'test') {
       newThumb2 = 100 - numVal;
       if (newThumb1 > newThumb2) newThumb1 = newThumb2;
     }
-
     onCollectionUpdate?.(collection.id, {
       trainSplitPercent: newThumb1,
       valSplitPercent: newThumb2 - newThumb1,
@@ -192,10 +181,8 @@ function AnnotationView({ collection, currentVersionId, onCollectionUpdate, data
     });
   };
 
-  // Пересобирает сплит уже импортированных датасетов под текущие % (без потери разметки).
   async function handleResplit() {
     if (!collection) return;
-    // Импортированные датасеты не трогаем — сохраняем исходный train/val/test автора.
     const activeFolders = (collection.folders || []).filter((f) => f.isEnabled && f.folderType !== "imported_dataset");
     if (activeFolders.length === 0) { setSaveMessage("Нет папок для пересборки (импортированные датасеты не пересобираются)."); return; }
     try {
@@ -223,6 +210,78 @@ function AnnotationView({ collection, currentVersionId, onCollectionUpdate, data
       setIsSaving(false);
     }
   }
+
+  const handleCheckAnnotations = () => {
+    if (!collection) return;
+
+    const errorsMap = {};
+    const classesCount = collection.projectClasses?.length || annotationsManager.classes.length || 0;
+
+    galleryImages.forEach((img) => {
+      const imgId = img.uuid || img.relativePath || img.id;
+      const errors = [];
+
+      // 1. Проверка на разметку без изображения
+      const isStrayTxt = img.isStrayTxt || (img.name && img.name.endsWith('.txt') && !img.url) || img.missingImage;
+      if (isStrayTxt) {
+        errors.push("Файл разметки *.txt существует, но само изображение отсутствует.");
+        errorsMap[imgId] = errors;
+        return; 
+      }
+
+      // 2. Проверка на изображение без разметки (нет .txt)
+      const hasLabelFile = Boolean(img.hasLabelFile); 
+      const hasStateAnnotations = annotationsManager.getAnnotationsByImage(imgId).length > 0;
+
+      if (!hasLabelFile && !hasStateAnnotations) {
+        errors.push("Изображение без аннотаций (отсутствует файл разметки *.txt).");
+      }
+
+      // 3. Анализ YOLO bboxes (запускается только если текст разметки не пустой)
+      const txtContent = (img.annotationText || "").trim();
+      if (txtContent) {
+        const lines = txtContent.split("\n");
+        lines.forEach((line, idx) => {
+          const trimmed = line.trim();
+          if (!trimmed) return; 
+
+          const parts = trimmed.split(/\s+/);
+          if (parts.length < 5) {
+            errors.push(`Строка ${idx + 1}: Некорректный формат YOLO (ожидалось 5 значений).`);
+            return;
+          }
+
+          const classIdx = parseInt(parts[0], 10);
+          const x = parseFloat(parts[1]);
+          const y = parseFloat(parts[2]);
+          const w = parseFloat(parts[3]);
+          const h = parseFloat(parts[4]);
+
+          // Проверка существования класса
+          if (isNaN(classIdx) || classIdx < 0 || classIdx >= classesCount) {
+            errors.push(`Строка ${idx + 1}: Обнаружен неизвестный класс (индекс ${parts[0]}).`);
+          }
+
+          // Проверка нормализации координат 0..1
+          if (x < 0 || x > 1 || y < 0 || y > 1 || w < 0 || w > 1 || h < 0 || h > 1) {
+            errors.push(`Строка ${idx + 1}: Координаты BBox выходят за пределы диапазона 0..1.`);
+          }
+        });
+      }
+
+      if (errors.length > 0) {
+        errorsMap[imgId] = errors;
+      }
+    });
+
+    setValidationResults(errorsMap);
+    const totalErrors = Object.keys(errorsMap).length;
+    setSaveMessage(
+      totalErrors > 0 
+        ? `Проверка завершена. Найдено проблемных объектов: ${totalErrors}` 
+        : "Проверка успешно пройдена! Ошибок в разметке не обнаружено."
+    );
+  };
 
   const handleImageClick = (image) => { setCurrentImage(image); setShowViewer(true); };
   const handleCloseViewer = () => { setShowViewer(false); setCurrentImage(null); };
@@ -265,6 +324,14 @@ function AnnotationView({ collection, currentVersionId, onCollectionUpdate, data
           </div>
         </div>
         <div className="annotation-actions" style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <button 
+            className="action-button secondary check-annotations-btn" 
+            onClick={handleCheckAnnotations} 
+            disabled={images.length === 0}
+            title="Проверить разметку на отсутствие аннотаций, bboxes вне диапазона 0..1 и неописанные классы"
+          >
+            Проверить разметку
+          </button>
           <button className="action-button primary" onClick={handleResplit} disabled={isSaving || images.length === 0} title="Перераспределить данные по train/val/test под текущие проценты (разметка сохраняется)">
             {isSaving ? "Пересборка..." : "Пересобрать сплит"}
           </button>
@@ -320,7 +387,11 @@ function AnnotationView({ collection, currentVersionId, onCollectionUpdate, data
 
       {saveMessage && <div className="annotation-save-message">{saveMessage}</div>}
 
-      <ImageGallery images={galleryImages} onImageClick={handleImageClick} />
+      <ImageGallery 
+        images={galleryImages} 
+        onImageClick={handleImageClick} 
+        validationResults={validationResults} 
+      />
 
       {showViewer && currentImage && (
         <ImageViewer

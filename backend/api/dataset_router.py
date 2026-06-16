@@ -94,12 +94,16 @@ def _collect_image_entries(dataset_name: str, dataset_dir: str, workspace_path: 
                 original_name = uuid_mapping.get(uid, {}).get("original_name", uid)
                 split = uuid_mapping.get(uid, {}).get("split")
                 label_file = labels_dir / f"{uid}.txt"
-                annotation_text = _read_text_file(str(label_file)) if label_file.exists() else ""
+                
+                has_label_file = label_file.exists()
+                annotation_text = _read_text_file(str(label_file)) if has_label_file else ""
+                
                 stored_path = f"{images_dir.name}/{image_file.name}"
                 if split and split != "all": stored_path = f"{split}/{stored_path}"
                 entries.append({
                     "name": uid, "originalName": original_name, "relativePath": uid, "storedPath": stored_path, "split": split,
                     "url": f"/api/datasets/{quote(dataset_name)}/files/{_quote_path_parts(stored_path)}", "annotationText": annotation_text, "uuid": uid,
+                    "hasLabelFile": has_label_file  # <-- Передаем флаг существования файла на фронтенд
                 })
             entries.sort(key=lambda x: x["name"])
             return entries
@@ -114,11 +118,15 @@ def _collect_image_entries(dataset_name: str, dataset_dir: str, workspace_path: 
             relative_in_group = image_path.relative_to(image_source).as_posix()
             stored_image_path = image_path.relative_to(dataset_root).as_posix()
             label_path = (label_source / relative_in_group).with_suffix(".txt")
-            annotation_text = _read_text_file(str(label_path)) if label_path.is_file() else ""
+            
+            has_label_file = label_path.is_file()
+            annotation_text = _read_text_file(str(label_path)) if has_label_file else ""
+            
             wp_param = f"?workspace_path={quote(workspace_path)}" if workspace_path else ""
             entries.append({
                 "name": image_path.name, "relativePath": relative_in_group, "storedPath": stored_image_path, "split": split_name,
                 "url": f"/api/datasets/files/{_quote_path_parts(stored_image_path)}{wp_param}", "annotationText": annotation_text,
+                "hasLabelFile": has_label_file  # <-- Передаем флаг существования файла на фронтенд
             })
     return entries
 
@@ -293,7 +301,65 @@ def scan_workspace_datasets(workspace_path: str = Query(None)):
         for subdir in subdirs:
             try:
                 result = scan_dataset_structure(str(subdir), subdir.name)
-                all_files.extend(result.get("files", []))
+                files = result.get("files", [])
+                
+                # Собираем UUID/имена картинок, которые бэкенд успешно нашел
+                existing_stems = set()
+                
+                for f in files:
+                    img_abs_path = f.get("absolute_path") or f.get("absolutePath")
+                    if img_abs_path:
+                        img_path = Path(img_abs_path)
+                        existing_stems.add(img_path.stem)
+                        if img_path.parent.name == "images":
+                            txt_path = img_path.parent.parent / "labels" / f"{img_path.stem}.txt"
+                            f["hasLabelFile"] = txt_path.is_file()
+                        else:
+                            f["hasLabelFile"] = bool(f.get("annotationFile"))
+                    else:
+                        f["hasLabelFile"] = bool(f.get("annotationFile"))
+                        if f.get("uuid"):
+                            existing_stems.add(f.get("uuid"))
+
+                # txt без картинки
+                uuid_mapping = _load_uuid_mapping(subdir)
+                for split in ("train", "val", "test"):
+                    labels_dir = subdir / split / "labels"
+                    images_dir = subdir / split / "images"
+                    
+                    if labels_dir.is_dir():
+                        for txt_file in labels_dir.glob("*.txt"):
+                            if txt_file.name == "classes.txt":
+                                continue
+                            
+                            uid = txt_file.stem
+                            
+                            has_image = False
+                            if images_dir.is_dir():
+                                for ext in IMAGE_EXTENSIONS:
+                                    if (images_dir / f"{uid}{ext}").is_file():
+                                        has_image = True
+                                        break
+                            
+                            if not has_image and uid not in existing_stems:
+                                annotation_text = _read_text_file(str(txt_file))
+                                original_name = uuid_mapping.get(uid, {}).get("original_name", uid)
+                                
+                                files.append({
+                                    "name": f"{uid}.txt",
+                                    "originalName": original_name,
+                                    "relativePath": uid,
+                                    "uuid": uid,
+                                    "id": uid,
+                                    "annotationText": annotation_text,
+                                    "isStrayTxt": True,
+                                    "hasLabelFile": True,
+                                    "url": None,
+                                    "size": txt_file.stat().st_size
+                                })
+                                existing_stems.add(uid)
+
+                all_files.extend(files)
                 all_classes.update(result.get("classes", []))
                 all_tree.extend(result.get("tree", []))
             except Exception:
