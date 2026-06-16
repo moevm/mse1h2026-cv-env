@@ -391,3 +391,202 @@
   font-size: 14px;
   color: #374151;
 }
+
+/* Кнопка проверки разметки */
+.check-annotations-btn {
+  background-color: #f39c12 !important;
+  color: #fff !important;
+  transition: background-color 0.2s ease;
+}
+.check-annotations-btn:hover {
+  background-color: #d35400 !important;
+}
+
+/* Элемент галереи с ошибками валидации */
+.gallery-item.has-validation-errors {
+  border: 2px solid #e74c3c !important;
+  background-color: #fdf2f2 !important;
+}
+
+/* Стилизация сиротского TXT файла как заглушки */
+.gallery-item.stray-txt-item {
+  background: repeating-linear-gradient(
+    45deg,
+    #fef9e7,
+    #fef9e7 10px,
+    #fdebd0 10px,
+    #fdebd0 20px
+  ) !important;
+  border: 2px dashed #e67e22 !important;
+}
+
+/* Бейдж ошибки вместо стандартной галочки */
+.validation-badge {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  background-color: #e74c3c;
+  color: white;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  z-index: 2;
+}
+
+/* Всплывающий тултип с описанием ошибок */
+.validation-tooltip {
+  display: none;
+  position: absolute;
+  bottom: 105%;
+  left: 5%;
+  width: 90%;
+  background-color: #2c3e50;
+  color: #ecf0f1;
+  padding: 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  text-align: left;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+  z-index: 100;
+  pointer-events: none;
+  word-break: break-word;
+}
+
+/* Показ тултипа при ховере на элемент */
+.gallery-item:hover .validation-tooltip {
+  display: block;
+}
+
+.tooltip-header {
+  font-weight: bold;
+  color: #e74c3c;
+  margin-bottom: 4px;
+  border-bottom: 1px solid #34495e;
+  padding-bottom: 2px;
+}
+
+.tooltip-item {
+  margin-bottom: 2px;
+  color: #f1c40f;
+}
+
+/* Делаем иконку предупреждения на карточке более интерактивной */
+.validation-badge {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  background-color: #e74c3c;
+  color: white;
+  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+  z-index: 5;
+  cursor: pointer;
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+
+.validation-badge:hover {
+  transform: scale(1.18);
+  background-color: #c0392b;
+}
+
+/* ФОН ДЛЯ ПОПАПА ОШИБОК (Затемнение всего экрана) */
+.validation-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.45);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 2500; /* Ставим заведомо выше виртуальной сетки и остальных слоев */
+}
+
+/* ОКНО ПОПАПА */
+.validation-modal-content {
+  background-color: #ffffff;
+  border-radius: 8px;
+  width: 460px;
+  max-width: 90vw;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: validationPopupShow 0.2s ease-out;
+}
+
+@keyframes validationPopupShow {
+  from { opacity: 0; transform: scale(0.95) translateY(-10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* ШАПКА ПОПАПА */
+.validation-modal-header {
+  background-color: #e74c3c;
+  color: #ffffff;
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.validation-modal-header h4 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 85%;
+}
+
+.validation-modal-close {
+  background: none;
+  border: none;
+  color: #ffffff;
+  font-size: 24px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+  transition: color 0.15s;
+}
+
+.validation-modal-close:hover {
+  color: #f1c40f;
+}
+
+/* ТЕЛО С ОШИБКАМИ */
+.validation-modal-body {
+  padding: 16px;
+  max-height: 320px;
+  overflow-y: auto;
+  background-color: #fafafa;
+}
+
+/* СТРОКА ОШИБКИ */
+.validation-modal-error-item {
+  font-size: 13px;
+  color: #2c3e50;
+  margin-bottom: 8px;
+  line-height: 1.45;
+  border-bottom: 1px solid #eaeded;
+  padding-bottom: 8px;
+}
+
+.validation-modal-error-item:last-child {
+  margin-bottom: 0;
+  border-bottom: none;
+  padding-bottom: 0;
+}

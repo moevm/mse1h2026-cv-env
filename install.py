@@ -66,7 +66,7 @@ def main():
     if os.path.exists("frontend"):
         print("\n📦 Устанавливаем Node.js зависимости для фронтенда (npm install)...")
         run_command(["npm", "install"], cwd="frontend")
-        run_command(["npm", "audit", "fix"], cwd="frontend")
+        # run_command(["npm", "audit", "fix"], cwd="frontend")
     else:
         print("\n⚠️ Папка frontend не найдена")
 
