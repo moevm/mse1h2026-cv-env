@@ -226,7 +226,7 @@ function AnnotationView({ collection, currentVersionId, onCollectionUpdate, data
       // 1. Проверка на разметку без изображения (Stray TXT)
       const isStrayTxt = img.isStrayTxt || (img.name && img.name.endsWith('.txt') && !img.url) || img.missingImage;
       if (isStrayTxt) {
-        errors.push("Файл разметки (.txt) существует, но само изображение отсутствует.");
+        errors.push("Файл разметки *.txt существует, но само изображение отсутствует.");
         errorsMap[imgId] = errors;
         return; 
       }
@@ -237,7 +237,7 @@ function AnnotationView({ collection, currentVersionId, onCollectionUpdate, data
 
       // Если файла .txt нет на диске И в текущей сессии фронтенда ничего не нарисовано
       if (!hasLabelFile && !hasStateAnnotations) {
-        errors.push("Изображение без аннотаций (отсутствует файл разметки .txt).");
+        errors.push("Изображение без аннотаций (отсутствует файл разметки *.txt).");
       }
 
       // 3. Анализ YOLO bboxes (запускается только если текст разметки не пустой)

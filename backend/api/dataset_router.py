@@ -305,20 +305,64 @@ def scan_workspace_datasets(workspace_path: str = Query(None)):
                 result = scan_dataset_structure(str(subdir), subdir.name)
                 files = result.get("files", [])
                 
-                # ЖЕСТКАЯ ПРОВЕРКА НАЛИЧИЯ ФАЙЛА НА ДИСКЕ ПО СТРУКТУРЕ YOLO
+                # Собираем UUID/имена картинок, которые бэкенд успешно нашел
+                existing_stems = set()
+                
                 for f in files:
                     img_abs_path = f.get("absolute_path") or f.get("absolutePath")
                     if img_abs_path:
                         img_path = Path(img_abs_path)
-                        # Если картинка лежит в папке "images", то по правилам YOLO
-                        # её разметка лежит в соседней папке "labels"
+                        existing_stems.add(img_path.stem)
                         if img_path.parent.name == "images":
                             txt_path = img_path.parent.parent / "labels" / f"{img_path.stem}.txt"
-                            f["hasLabelFile"] = txt_path.is_file() # True если файл ЕСТЬ (пустой или нет)
+                            f["hasLabelFile"] = txt_path.is_file()
                         else:
                             f["hasLabelFile"] = bool(f.get("annotationFile"))
                     else:
                         f["hasLabelFile"] = bool(f.get("annotationFile"))
+                        if f.get("uuid"):
+                            existing_stems.add(f.get("uuid"))
+
+                # ПОИСК СИРОТСКИХ (.TXT БЕЗ СООТВЕТСТВУЮЩЕЙ КАРТИНКИ)
+                uuid_mapping = _load_uuid_mapping(subdir)
+                for split in ("train", "val", "test"):
+                    labels_dir = subdir / split / "labels"
+                    images_dir = subdir / split / "images"
+                    
+                    if labels_dir.is_dir():
+                        for txt_file in labels_dir.glob("*.txt"):
+                            if txt_file.name == "classes.txt":
+                                continue
+                            
+                            uid = txt_file.stem
+                            
+                            # Проверяем, существует ли физически картинка с таким же именем
+                            has_image = False
+                            if images_dir.is_dir():
+                                for ext in IMAGE_EXTENSIONS:
+                                    if (images_dir / f"{uid}{ext}").is_file():
+                                        has_image = True
+                                        break
+                            
+                            # Если картинки нет на диске и она не пришла из scan_dataset_structure
+                            if not has_image and uid not in existing_stems:
+                                annotation_text = _read_text_file(str(txt_file))
+                                original_name = uuid_mapping.get(uid, {}).get("original_name", uid)
+                                
+                                # Добавляем виртуальную заглушку для фронтенда
+                                files.append({
+                                    "name": f"{uid}.txt",
+                                    "originalName": original_name,
+                                    "relativePath": uid,
+                                    "uuid": uid,
+                                    "id": uid,
+                                    "annotationText": annotation_text,
+                                    "isStrayTxt": True,      # Наш ключевой флаг проблемы
+                                    "hasLabelFile": True,
+                                    "url": None,             # URL картинки отсутствует
+                                    "size": txt_file.stat().st_size
+                                })
+                                existing_stems.add(uid)
 
                 all_files.extend(files)
                 all_classes.update(result.get("classes", []))

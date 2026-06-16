@@ -68,7 +68,7 @@ function ImageGallery ({ images, onImageClick, validationResults = {} }) {
 
                   <div className="image-info">
                     <p className="image-name">
-                      {isStray ? `📄 [Заглушка] ${image.name}` : image.name}
+                      {image.name}
                     </p>
                     <p className="image-size">{(image.size / 1024).toFixed(2)} KB</p>
                   </div>
