@@ -9,6 +9,8 @@ const NewExperimentModal = ({
 }) => {
   const [form, setForm] = useState({
     name: "",
+    goal: "",
+    notes: "",
     model_path: "",
     data_yaml: "",
     conf_threshold: 0.25,
@@ -87,6 +89,24 @@ const NewExperimentModal = ({
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
               placeholder="Напр: Exp1"
+            />
+          </label>
+
+          <label>Цель эксперимента (опционально):
+            <input
+              type="text"
+              value={form.goal}
+              onChange={(e) => setForm({ ...form, goal: e.target.value })}
+              placeholder="Напр: проверка yolov8n на датасете v2"
+            />
+          </label>
+
+          <label>Заметки (опционально):
+            <textarea
+              rows={2}
+              value={form.notes}
+              onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              placeholder="Любые комментарии к эксперименту"
             />
           </label>
 

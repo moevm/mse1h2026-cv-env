@@ -448,6 +448,16 @@ export const getAvailableModels = async (workspacePath) => {
   return await res.json();
 };
 
+export const updateExperiment = async (expId, fields, workspacePath) => {
+  const res = await fetch(`${API_BASE_URL}/api/experiments/${expId}${buildQuery(workspacePath)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res, "Ошибка обновления эксперимента"));
+  return await res.json();
+};
+
 export const deleteExperiment = async (expId, workspacePath) => {
   const res = await fetch(`${API_BASE_URL}/api/experiments/${expId}${buildQuery(workspacePath)}`, {
     method: "DELETE",
