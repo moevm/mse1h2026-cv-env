@@ -8,7 +8,14 @@ class RunExperimentRequest(BaseModel):
     conf_threshold: float = 0.25
     iou_threshold: float = 0.45
     name: Optional[str] = None
+    goal: Optional[str] = None
+    notes: Optional[str] = None
     workspace_path: Optional[str] = None
+
+class UpdateExperimentRequest(BaseModel):
+    goal: Optional[str] = None
+    notes: Optional[str] = None
+    result_label: Optional[str] = None
 
 class ExperimentSummary(BaseModel):
     id: str
@@ -21,6 +28,9 @@ class ExperimentSummary(BaseModel):
     f1: float
     status: str
     created_at: datetime
+    goal: str = ""
+    notes: str = ""
+    result_label: str = ""
 
 class ExperimentDetail(ExperimentSummary):
     conf_threshold: float
