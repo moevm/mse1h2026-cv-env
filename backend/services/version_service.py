@@ -229,6 +229,19 @@ def get_version_stats(workspace_path: str, version_id: str) -> dict:
     total_images = 0
     annotated_images = 0
     class_counts_by_name: dict[str, int] = {}
+    split_stats = {"train": 0, "val": 0, "test": 0}
+
+    mapping_files = list(datasets_dir.rglob("uuid_mapping.json"))
+    if mapping_files:
+        try:
+            with open(mapping_files[0], 'r', encoding='utf-8') as f:
+                mapping = json.load(f)
+            for info in mapping.values():
+                split = info.get("split")
+                if split in split_stats:
+                    split_stats[split] += 1
+        except Exception:
+            pass
 
     def scan_dir_for_images_and_labels(root_dir: Path):
         nonlocal total_images, annotated_images, class_counts_by_name
@@ -271,10 +284,12 @@ def get_version_stats(workspace_path: str, version_id: str) -> dict:
 
     classes = sorted(class_counts_by_name.keys())
     class_counts = {name: class_counts_by_name[name] for name in classes}
+    
     return {
         "total_images": total_images,
         "annotated_images": annotated_images,
         "classes": classes,
         "class_counts": class_counts,
+        "split_stats": split_stats,   # <-- теперь тут будут данные
     }
 
