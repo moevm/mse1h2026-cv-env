@@ -4,7 +4,7 @@ import shutil
 from pathlib import Path
 from fastapi.responses import FileResponse
 from core.paths import get_project_paths
-from schemas.experiment_schema import RunExperimentRequest, ExperimentSummary, CompareResponse
+from schemas.experiment_schema import RunExperimentRequest, UpdateExperimentRequest, ExperimentSummary, CompareResponse
 from services.experiment_service import ExperimentService
 
 router = APIRouter(prefix="/api/experiments", tags=["experiments"])
@@ -28,6 +28,18 @@ async def compare_experiments(exp_ids: List[str], workspace_path: str = Query(No
 @router.get("/models", response_model=List[Dict[str, str]])
 async def get_trained_models(workspace_path: str = Query(None)):
     return ExperimentService.get_trained_models(workspace_path)
+
+@router.patch("/{exp_id}", response_model=ExperimentSummary)
+async def update_experiment(exp_id: str, req: UpdateExperimentRequest, workspace_path: str = Query(None)):
+    try:
+        return ExperimentService.update_experiment(
+            workspace_path, exp_id,
+            goal=req.goal, notes=req.notes, result_label=req.result_label
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Experiment not found")
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
 @router.delete("/{exp_id}")
 async def delete_experiment(exp_id: str, workspace_path: str = Query(None)):

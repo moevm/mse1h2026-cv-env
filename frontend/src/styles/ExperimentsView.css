@@ -225,7 +225,8 @@
 }
 
 .exp-modal-content input,
-.exp-modal-content select {
+.exp-modal-content select,
+.exp-modal-content textarea {
   padding: 10px 14px;
   border: 1px solid #d1d5db;
   border-radius: 10px;
@@ -234,8 +235,14 @@
   background: #fafafa;
 }
 
+.exp-modal-content textarea {
+  font-family: inherit;
+  resize: vertical;
+}
+
 .exp-modal-content input:focus,
-.exp-modal-content select:focus {
+.exp-modal-content select:focus,
+.exp-modal-content textarea:focus {
   outline: none;
   border-color: #4f46e5;
   background: white;
@@ -760,5 +767,125 @@
   font-size: 12px;
   color: #868e96;
   border-top: 1px solid #e9ecef;
+}
+
+/* Колонки заметок / цели и редактируемые ячейки */
+.goal-cell,
+.notes-cell {
+  text-align: left;
+  max-width: 240px;
+  min-width: 150px;
+}
+
+.editable-cell {
+  border-radius: 6px;
+  padding: 4px 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+  min-height: 24px;
+}
+
+.editable-cell:not(.disabled):hover {
+  background: #eef2ff;
+}
+
+.editable-cell.disabled {
+  cursor: default;
+}
+
+.editable-cell .cell-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #1f2937;
+  font-size: 13px;
+}
+
+.editable-cell .cell-empty {
+  color: #adb5bd;
+  font-size: 12px;
+  font-style: italic;
+}
+
+.editable-cell.editing {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  cursor: default;
+}
+
+.editable-cell.editing input,
+.editable-cell.editing textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid #4f46e5;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.editable-cell.editing input:focus,
+.editable-cell.editing textarea:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+}
+
+.editable-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.cell-save-btn,
+.cell-cancel-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+
+.cell-save-btn:hover:not(:disabled) {
+  background: #d3f9d8;
+}
+
+.cell-cancel-btn:hover:not(:disabled) {
+  background: #ffe3e3;
+}
+
+/* Селект пометки результата */
+.result-select {
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid #dee2e6;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  background: white;
+}
+
+.result-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.result-select.result-good {
+  background: #d3f9d8;
+  border-color: #69db7c;
+  color: #2b8a3e;
+}
+
+.result-select.result-bad {
+  background: #ffe3e3;
+  border-color: #ff8787;
+  color: #c92a2a;
+}
+
+.result-select.result-needs_retry {
+  background: #fff3bf;
+  border-color: #ffd43b;
+  color: #b08900;
 }
 

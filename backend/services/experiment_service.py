@@ -16,6 +16,8 @@ from schemas.experiment_schema import RunExperimentRequest, ExperimentSummary, E
 experiment_threads: Dict[str, threading.Thread] = {}
 experiment_events: Dict[str, threading.Event] = {}
 
+VALID_RESULT_LABELS = {"", "good", "bad", "needs_retry"}
+
 class ExperimentService:
     @staticmethod
     def _get_metadata_path(workspace_path: str) -> Path:
@@ -50,6 +52,9 @@ class ExperimentService:
             "data_yaml": req.data_yaml,
             "conf_threshold": req.conf_threshold,
             "iou_threshold": req.iou_threshold,
+            "goal": req.goal or "",
+            "notes": req.notes or "",
+            "result_label": "",
             "status": "running",
             "created_at": datetime.now().isoformat(),
             "final_metrics": {},
@@ -158,10 +163,42 @@ class ExperimentService:
                     id=exp_id, name=data["name"], model_path=data["model_path"],
                     map50=metrics.get("map50", 0.0), map_=metrics.get("map50_95", 0.0), precision=metrics.get("precision", 0.0),
                     recall=metrics.get("recall", 0.0), f1=metrics.get("f1", 0.0),
-                    status=data["status"], created_at=datetime.fromisoformat(data["created_at"])
+                    status=data["status"], created_at=datetime.fromisoformat(data["created_at"]),
+                    goal=data.get("goal", ""), notes=data.get("notes", ""),
+                    result_label=data.get("result_label", "")
                 ))
         experiments.sort(key=lambda x: getattr(x, sort_by, 0.0), reverse=(order == "desc"))
         return experiments
+
+    @staticmethod
+    def update_experiment(workspace_path: str, exp_id: str,
+                          goal: Any = None, notes: Any = None,
+                          result_label: Any = None) -> ExperimentSummary:
+        metadata = ExperimentService._load_metadata(workspace_path)
+        data = metadata.get(exp_id)
+        if not data:
+            raise KeyError(exp_id)
+
+        if goal is not None:
+            data["goal"] = goal
+        if notes is not None:
+            data["notes"] = notes
+        if result_label is not None:
+            if result_label not in VALID_RESULT_LABELS:
+                raise ValueError(f"Invalid result_label: {result_label}")
+            data["result_label"] = result_label
+
+        ExperimentService._save_metadata(workspace_path, metadata)
+
+        metrics = data.get("final_metrics", {})
+        return ExperimentSummary(
+            id=exp_id, name=data["name"], model_path=data["model_path"],
+            map50=metrics.get("map50", 0.0), map_=metrics.get("map50_95", 0.0), precision=metrics.get("precision", 0.0),
+            recall=metrics.get("recall", 0.0), f1=metrics.get("f1", 0.0),
+            status=data["status"], created_at=datetime.fromisoformat(data["created_at"]),
+            goal=data.get("goal", ""), notes=data.get("notes", ""),
+            result_label=data.get("result_label", "")
+        )
 
     @staticmethod
     def get_comparison_data(workspace_path: str, exp_ids: List[str]) -> Dict[str, ExperimentDetail]:
@@ -176,6 +213,8 @@ class ExperimentService:
                 map50=metrics.get("map50", 0.0), map_=metrics.get("map50_95", 0.0), precision=metrics.get("precision", 0.0),
                 recall=metrics.get("recall", 0.0), f1=metrics.get("f1", 0.0),
                 status=data["status"], created_at=datetime.fromisoformat(data["created_at"]),
+                goal=data.get("goal", ""), notes=data.get("notes", ""),
+                result_label=data.get("result_label", ""),
                 conf_threshold=data["conf_threshold"], iou_threshold=data["iou_threshold"],
                 data_yaml=data["data_yaml"], curves=data.get("curves", {}),
                 graphics_urls=data.get("graphics_urls", {}),

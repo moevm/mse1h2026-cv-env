@@ -13,6 +13,7 @@ import {
   runExperiment,
   compareExperiments,
   deleteExperiment,
+  updateExperiment,
   getAvailableModels,
   getStoredDatasets,
 } from "../../services/api";
@@ -46,6 +47,91 @@ const SORT_METRICS = [
   { value: "precision", label: "Precision" },
   { value: "recall", label: "Recall" },
 ];
+
+const RESULT_LABELS = [
+  { value: "", label: "— Не задано" },
+  { value: "good", label: "👍 Good" },
+  { value: "bad", label: "👎 Bad" },
+  { value: "needs_retry", label: "🔁 Needs retry" },
+];
+
+// Ячейка с текстом (цель / заметка), редактируемая по клику.
+const EditableCell = ({ value, placeholder, multiline = false, disabled = false, onSave }) => {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value || "");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!editing) setDraft(value || "");
+  }, [value, editing]);
+
+  const handleSave = async () => {
+    if (draft === (value || "")) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave(draft);
+      setEditing(false);
+    } catch (err) {
+      // onSave сам показывает ошибку; остаёмся в режиме редактирования
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setDraft(value || "");
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <div className="editable-cell editing">
+        {multiline ? (
+          <textarea
+            autoFocus
+            rows={2}
+            value={draft}
+            disabled={saving}
+            onChange={(e) => setDraft(e.target.value)}
+          />
+        ) : (
+          <input
+            type="text"
+            autoFocus
+            value={draft}
+            disabled={saving}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleSave();
+              if (e.key === "Escape") handleCancel();
+            }}
+          />
+        )}
+        <div className="editable-actions">
+          <button type="button" className="cell-save-btn" onClick={handleSave} disabled={saving} title="Сохранить">💾</button>
+          <button type="button" className="cell-cancel-btn" onClick={handleCancel} disabled={saving} title="Отмена">✖</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={`editable-cell${disabled ? " disabled" : ""}`}
+      onClick={() => !disabled && setEditing(true)}
+      title={disabled ? "" : "Нажмите, чтобы редактировать"}
+    >
+      {value ? (
+        <span className="cell-text">{value}</span>
+      ) : (
+        <span className="cell-empty">{placeholder}</span>
+      )}
+    </div>
+  );
+};
 
 const SortMetricSelect = ({ value, onChange, placeholder, disabled = false }) => {
   return (
@@ -189,6 +275,20 @@ function ExperimentsView({ collection }) {
     fetchExperiments();
   };
 
+  const handleUpdateExperiment = async (expId, fields) => {
+    // Оптимистично обновляем строку, затем синхронизируемся с ответом сервера.
+    setExperiments((prev) => prev.map((e) => (e.id === expId ? { ...e, ...fields } : e)));
+    try {
+      const updated = await updateExperiment(expId, fields, collection.workspacePath);
+      setExperiments((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
+    } catch (err) {
+      console.error("Failed to update experiment", err);
+      alert("Ошибка сохранения: " + err.message);
+      await fetchExperiments(true);
+      throw err;
+    }
+  };
+
   const handleDeleteExperiment = async (expId, expName) => {
     if (!window.confirm(`Удалить эксперимент "${expName}"? Это действие нельзя отменить.`)) {
       return;
@@ -267,6 +367,7 @@ function ExperimentsView({ collection }) {
             <tr>
               <th>Выбрать</th>
               <th>Название</th>
+              <th>Цель</th>
               <th>Модель</th>
               <th>mAP50
                 <span className="tooltip-icon"
@@ -294,6 +395,8 @@ function ExperimentsView({ collection }) {
                   onMouseLeave={() => setTooltip({ visible: false })}>?</span>
               </th>
               <th>Статус</th>
+              <th>Результат</th>
+              <th>Заметки</th>
               <th></th>
             </tr>
           </thead>
@@ -313,6 +416,13 @@ function ExperimentsView({ collection }) {
                     />
                   </td>
                   <td>{exp.name}</td>
+                  <td className="goal-cell">
+                    <EditableCell
+                      value={exp.goal}
+                      placeholder="+ Добавить цель"
+                      onSave={(val) => handleUpdateExperiment(exp.id, { goal: val })}
+                    />
+                  </td>
                   <td className="model-path">{exp.model_path}</td>
                   <td className="metric-value">{exp.map50?.toFixed(3) || "0.000"}</td>
                   <td className="metric-value">{exp.map_?.toFixed(3) || "0.000"}</td>
@@ -323,6 +433,26 @@ function ExperimentsView({ collection }) {
                   </td>
                   <td className={`status-${exp.status}`}>
                     {exp.status === "completed" ? "✅ Завершён" : exp.status}
+                  </td>
+                  <td className="result-cell">
+                    <select
+                      className={`result-select result-${exp.result_label || "none"}`}
+                      value={exp.result_label || ""}
+                      onChange={(e) => handleUpdateExperiment(exp.id, { result_label: e.target.value })}
+                      disabled={exp.status === "running"}
+                    >
+                      {RESULT_LABELS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="notes-cell">
+                    <EditableCell
+                      value={exp.notes}
+                      placeholder="+ Добавить заметку"
+                      multiline
+                      onSave={(val) => handleUpdateExperiment(exp.id, { notes: val })}
+                    />
                   </td>
                   <td>
                     <button
