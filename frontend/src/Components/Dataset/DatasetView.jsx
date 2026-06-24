@@ -17,6 +17,7 @@ function DatasetView({
 }) {
   const [showNameInput, setShowNameInput] = useState(false);
   const [versionName, setVersionName] = useState("");
+  const [showStatsModal, setShowStatsModal] = useState(false);
 
   const ignoredPaths = useMemo(() => {
     return collection?.folders ? getDisabledFolderPaths(collection.folders) : [];
@@ -65,13 +66,22 @@ function DatasetView({
         </div>
         <div className="dataset-actions">
           {!showNameInput ? (
-            <button
-              className="action-button primary"
-              onClick={handleNewVersionClick}
-              disabled={versionsLoading}
-            >
-              {versionsLoading ? "Сохранение..." : "+ Новая версия"}
-            </button>
+            <>
+              <button
+                className="action-button primary"
+                onClick={handleNewVersionClick}
+                disabled={versionsLoading}
+              >
+                {versionsLoading ? "Сохранение..." : "+ Новая версия"}
+              </button>
+              <button
+                className="action-button stats-button"
+                onClick={() => setShowStatsModal(true)}
+                disabled={!currentVersionId}
+              >
+                📊 Статистика
+              </button>
+            </>
           ) : (
             <div className="version-name-form">
               <input
@@ -102,13 +112,6 @@ function DatasetView({
         </div>
       </div>
 
-		<div className="stats-section">
-          <DatasetStats
-            versionId={currentVersionId}
-            workspacePath={collection.workspacePath}
-          />
-        </div>
-
       <div className="dataset-content">
         <div className="versions-section">
           <h3>Версии датасета</h3>
@@ -120,9 +123,14 @@ function DatasetView({
             onDeleteVersion={onDeleteVersion}
           />
         </div>
-
-        
       </div>
+
+      <DatasetStats
+        versionId={currentVersionId}
+        workspacePath={collection?.workspacePath}
+        isOpen={showStatsModal}
+        onClose={() => setShowStatsModal(false)}
+      />
     </div>
   );
 }
